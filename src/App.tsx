@@ -3,7 +3,6 @@ import { SearchView } from '@/components/SearchView';
 import { BrowserView } from '@/components/BrowserView';
 import { MessengerView } from '@/components/MessengerView';
 import { PrivacyDashboard } from '@/components/PrivacyDashboard';
-import { TransactionMonitor } from '@/components/TransactionMonitor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Toaster } from '@/components/ui/sonner';
@@ -78,7 +77,7 @@ function App() {
             </Badge>
             <Badge variant="outline" className="text-blue-400 border-blue-400">
               <span className="w-2 h-2 bg-blue-400 rounded-full mr-1" />
-              All Features Active
+              Secure Connection
             </Badge>
           </div>
         </nav>
@@ -91,7 +90,6 @@ function App() {
           {currentView === 'privacy' && <PrivacyDashboard />}
         </main>
       </div>
-      <TransactionMonitor />
       <Toaster />
     </>
   );

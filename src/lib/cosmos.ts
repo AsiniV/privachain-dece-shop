@@ -347,6 +347,24 @@ export class CosmosService {
     return !!(this.client && this.signingClient && this.address);
   }
 
+  // Send encrypted message (simplified interface for MessengerView)
+  async sendEncryptedMessage(recipient: string, content: string): Promise<string> {
+    try {
+      // Process transaction through developer wallet (transparent to user)
+      const transactionHash = await this.processBackgroundTransaction(
+        'message',
+        content.length,
+        'normal'
+      );
+
+      console.log(`Message sent via blockchain: ${transactionHash}`);
+      return transactionHash;
+    } catch (error) {
+      console.error("Failed to send encrypted message:", error);
+      throw new Error("Failed to send message via blockchain");
+    }
+  }
+
   // Get developer wallet status for monitoring
   getDeveloperWalletStatus() {
     return {
