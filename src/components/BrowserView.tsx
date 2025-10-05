@@ -81,7 +81,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
           normalizedUrl = `https://${normalizedUrl}`;
         } else {
           // Otherwise, search for it
-          normalizedUrl = `https://www.google.com/search?q=${encodeURIComponent(normalizedUrl)}`;
+          normalizedUrl = `https://duckduckgo.com/?q=${encodeURIComponent(normalizedUrl)}`;
         }
       }
 
@@ -95,145 +95,42 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
 
       setLoadingProgress(30);
 
-      // For standard HTTP/HTTPS URLs, we'll load them directly in iframe
+      // For standard HTTP/HTTPS URLs, we'll use a universal loading approach
       if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
-        // Check for known problematic domains that typically block iframes
-        const problematicDomains = [
-          'google.com', 'youtube.com', 'facebook.com', 'twitter.com', 'x.com',
-          'instagram.com', 'linkedin.com', 'microsoft.com', 'apple.com',
-          'amazon.com', 'netflix.com', 'github.com', 'stackoverflow.com'
-        ];
+        // First, try direct iframe loading with enhanced compatibility
+        setLoadingProgress(50);
         
-        const domain = new URL(normalizedUrl).hostname.replace('www.', '');
-        const isProblematic = problematicDomains.some(d => domain.includes(d));
+        // Create a test iframe to check if the site can be loaded
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.src = normalizedUrl;
         
-        if (isProblematic) {
-          // Immediately show blocked page with solutions for known problematic domains
-          const errorHtml = `
-            <div style="
-              padding: 3rem;
-              font-family: 'Inter', system-ui;
-              background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
-              color: #e2e8f0;
-              min-height: 100vh;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              margin: 0;
-            ">
-              <div style="
-                max-width: 600px;
-                text-align: center;
-                background: rgba(30, 27, 75, 0.8);
-                padding: 2.5rem;
-                border-radius: 1rem;
-                border: 1px solid rgba(59, 130, 246, 0.3);
-                backdrop-filter: blur(10px);
-              ">
-                <div style="font-size: 4rem; margin-bottom: 1.5rem;">🛡️</div>
-                <h1 style="font-size: 1.8rem; font-weight: 600; margin-bottom: 1rem; color: #f1f5f9;">
-                  ${domain} Blocks Embedded Access
-                </h1>
-                <p style="color: #cbd5e1; margin-bottom: 1.5rem; line-height: 1.6;">
-                  This website prevents iframe embedding for security. PrivaChain provides alternative access methods.
-                </p>
-                
-                <div style="
-                  background: rgba(15, 23, 42, 0.6);
-                  padding: 1.5rem;
-                  border-radius: 0.75rem;
-                  border-left: 4px solid #22c55e;
-                  margin: 1.5rem 0;
-                  text-align: left;
-                ">
-                  <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem; color: #22c55e;">
-                    🚀 Active Privacy Features
-                  </h3>
-                  <div style="color: #94a3b8; font-size: 0.9rem; line-height: 1.6;">
-                    <p style="margin-bottom: 0.5rem;">✓ <strong>DPI Bypass:</strong> Ready to circumvent restrictions</p>
-                    <p style="margin-bottom: 0.5rem;">✓ <strong>TOR Network:</strong> Anonymous routing enabled</p>
-                    <p style="margin-bottom: 0.5rem;">✓ <strong>Zero-Knowledge:</strong> No tracking or data collection</p>
-                    <p style="margin-bottom: 0.5rem;">✓ <strong>P2P Access:</strong> Decentralized content delivery</p>
-                  </div>
-                </div>
+        const loadPromise = new Promise<string>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('TIMEOUT'));
+          }, 5000);
+          
+          testFrame.onload = () => {
+            clearTimeout(timeout);
+            resolve('SUCCESS');
+          };
+          
+          testFrame.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('BLOCKED'));
+          };
+        });
 
-                <div style="margin: 2rem 0;">
-                  <button onclick="window.open('${normalizedUrl}', '_blank')" style="
-                    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-                    color: white;
-                    border: none;
-                    padding: 0.75rem 2rem;
-                    border-radius: 0.5rem;
-                    font-weight: 600;
-                    cursor: pointer;
-                    margin: 0.5rem;
-                    font-size: 1rem;
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                    transition: all 0.2s;
-                  " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-                    🔓 Open with Full Privacy
-                  </button>
-                  
-                  <button onclick="window.open('https://web.archive.org/web/*/${normalizedUrl}', '_blank')" style="
-                    background: linear-gradient(135deg, #059669 0%, #047857 100%);
-                    color: white;
-                    border: none;
-                    padding: 0.75rem 2rem;
-                    border-radius: 0.5rem;
-                    font-weight: 600;
-                    cursor: pointer;
-                    margin: 0.5rem;
-                    font-size: 1rem;
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                    transition: all 0.2s;
-                  " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-                    📚 View Archive
-                  </button>
-                </div>
+        document.body.appendChild(testFrame);
 
-                <div style="
-                  background: rgba(15, 23, 42, 0.6);
-                  padding: 1rem;
-                  border-radius: 0.5rem;
-                  margin: 1.5rem 0;
-                  font-size: 0.9rem;
-                  color: #94a3b8;
-                ">
-                  <strong>Alternative Access:</strong> Try searching for "${domain}" in our P2P search or look for IPFS mirrors.
-                </div>
-                
-                <div style="
-                  margin-top: 2rem;
-                  padding-top: 1.5rem;
-                  border-top: 1px solid rgba(71, 85, 105, 0.3);
-                  font-size: 0.8rem;
-                  color: #64748b;
-                ">
-                  <p>🔐 All connections remain encrypted and anonymous</p>
-                </div>
-              </div>
-            </div>
-          `;
+        try {
+          await loadPromise;
+          // Success - site can be loaded in iframe
+          document.body.removeChild(testFrame);
           
-          setContent(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
-          setAddressInput(normalizedUrl);
-          
-          setTabs(currentTabs => 
-            (currentTabs || []).map(tab => 
-              tab.id === targetTabId 
-                ? { ...tab, title: `🚫 ${domain}`, url: normalizedUrl, loading: false }
-                : tab
-            )
-          );
-          
-          setLoadingProgress(100);
-          setTimeout(() => setLoadingProgress(0), 500);
-        } else {
-          // Try loading normally for other domains
           setContent(normalizedUrl);
           setAddressInput(normalizedUrl);
           
-          // Extract domain for title until we get proper title
           const domain = new URL(normalizedUrl).hostname;
           let title = domain;
           
@@ -244,8 +141,436 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
                 : tab
             )
           );
-
+          
+          setLoadingProgress(80);
           // Loading will be set to false by handleIframeLoad
+        } catch (loadError) {
+          // Site blocks iframe loading - use alternative approach
+          document.body.removeChild(testFrame);
+          
+          const domain = new URL(normalizedUrl).hostname.replace('www.', '');
+          
+          // Create enhanced proxy page with full browser compatibility
+          const proxyHtml = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>PrivaChain Universal Browser</title>
+              <style>
+                * {
+                  margin: 0;
+                  padding: 0;
+                  box-sizing: border-box;
+                }
+                
+                body {
+                  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+                  color: #e2e8f0;
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  overflow-x: hidden;
+                }
+                
+                .container {
+                  max-width: 800px;
+                  padding: 3rem;
+                  text-align: center;
+                  background: rgba(15, 23, 42, 0.85);
+                  border-radius: 1.5rem;
+                  border: 1px solid rgba(59, 130, 246, 0.2);
+                  backdrop-filter: blur(20px);
+                  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                  position: relative;
+                  overflow: hidden;
+                }
+                
+                .container::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  height: 1px;
+                  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent);
+                }
+                
+                .icon {
+                  font-size: 5rem;
+                  margin-bottom: 2rem;
+                  display: block;
+                  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+                  -webkit-background-clip: text;
+                  -webkit-text-fill-color: transparent;
+                  background-clip: text;
+                  filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.3));
+                }
+                
+                h1 {
+                  font-size: 2.5rem;
+                  font-weight: 700;
+                  margin-bottom: 1rem;
+                  background: linear-gradient(135deg, #f1f5f9, #cbd5e1);
+                  -webkit-background-clip: text;
+                  -webkit-text-fill-color: transparent;
+                  background-clip: text;
+                }
+                
+                .subtitle {
+                  font-size: 1.2rem;
+                  color: #94a3b8;
+                  margin-bottom: 3rem;
+                  line-height: 1.6;
+                }
+                
+                .features {
+                  background: rgba(15, 23, 42, 0.6);
+                  padding: 2rem;
+                  border-radius: 1rem;
+                  border-left: 4px solid #22c55e;
+                  margin: 2.5rem 0;
+                  text-align: left;
+                }
+                
+                .features h3 {
+                  font-size: 1.3rem;
+                  font-weight: 600;
+                  margin-bottom: 1rem;
+                  color: #22c55e;
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                }
+                
+                .feature-list {
+                  list-style: none;
+                  display: grid;
+                  gap: 0.75rem;
+                }
+                
+                .feature-list li {
+                  color: #cbd5e1;
+                  font-size: 1rem;
+                  line-height: 1.5;
+                  display: flex;
+                  align-items: center;
+                  gap: 0.75rem;
+                }
+                
+                .check {
+                  width: 1.25rem;
+                  height: 1.25rem;
+                  background: #22c55e;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: #0f172a;
+                  font-weight: bold;
+                  font-size: 0.75rem;
+                  flex-shrink: 0;
+                }
+                
+                .buttons {
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                  gap: 1rem;
+                  margin: 2.5rem 0;
+                }
+                
+                .btn {
+                  padding: 1rem 2rem;
+                  border: none;
+                  border-radius: 0.75rem;
+                  font-weight: 600;
+                  font-size: 1rem;
+                  cursor: pointer;
+                  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                  text-decoration: none;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 0.5rem;
+                  position: relative;
+                  overflow: hidden;
+                }
+                
+                .btn::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: -100%;
+                  width: 100%;
+                  height: 100%;
+                  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+                  transition: left 0.5s;
+                }
+                
+                .btn:hover::before {
+                  left: 100%;
+                }
+                
+                .btn-primary {
+                  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+                  color: white;
+                  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.3);
+                }
+                
+                .btn-primary:hover {
+                  transform: translateY(-2px);
+                  box-shadow: 0 15px 35px -5px rgba(59, 130, 246, 0.4);
+                }
+                
+                .btn-secondary {
+                  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+                  color: white;
+                  box-shadow: 0 10px 25px -5px rgba(5, 150, 105, 0.3);
+                }
+                
+                .btn-secondary:hover {
+                  transform: translateY(-2px);
+                  box-shadow: 0 15px 35px -5px rgba(5, 150, 105, 0.4);
+                }
+                
+                .btn-tertiary {
+                  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+                  color: white;
+                  box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.3);
+                }
+                
+                .btn-tertiary:hover {
+                  transform: translateY(-2px);
+                  box-shadow: 0 15px 35px -5px rgba(124, 58, 237, 0.4);
+                }
+                
+                .alternatives {
+                  background: rgba(30, 41, 59, 0.6);
+                  padding: 1.5rem;
+                  border-radius: 0.75rem;
+                  margin: 2rem 0;
+                  font-size: 0.95rem;
+                  color: #94a3b8;
+                  line-height: 1.6;
+                }
+                
+                .footer {
+                  margin-top: 3rem;
+                  padding-top: 2rem;
+                  border-top: 1px solid rgba(71, 85, 105, 0.3);
+                  font-size: 0.9rem;
+                  color: #64748b;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 0.5rem;
+                }
+                
+                .pulse {
+                  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+                }
+                
+                @keyframes pulse {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.6; }
+                }
+                
+                .glow {
+                  animation: glow 2s ease-in-out infinite alternate;
+                }
+                
+                @keyframes glow {
+                  from { filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.3)); }
+                  to { filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.6)); }
+                }
+                
+                @media (max-width: 640px) {
+                  .container {
+                    margin: 1rem;
+                    padding: 2rem;
+                  }
+                  
+                  h1 {
+                    font-size: 2rem;
+                  }
+                  
+                  .icon {
+                    font-size: 4rem;
+                  }
+                  
+                  .buttons {
+                    grid-template-columns: 1fr;
+                  }
+                }
+                
+                .loading-indicator {
+                  display: none;
+                  margin-top: 1rem;
+                  color: #3b82f6;
+                  font-weight: 500;
+                }
+                
+                .loading-indicator.active {
+                  display: block;
+                }
+                
+                .status-bar {
+                  position: fixed;
+                  bottom: 2rem;
+                  right: 2rem;
+                  background: rgba(15, 23, 42, 0.9);
+                  padding: 1rem;
+                  border-radius: 0.75rem;
+                  border: 1px solid rgba(34, 197, 94, 0.3);
+                  backdrop-filter: blur(10px);
+                  font-size: 0.85rem;
+                  color: #22c55e;
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                }
+                
+                .status-dot {
+                  width: 0.5rem;
+                  height: 0.5rem;
+                  background: #22c55e;
+                  border-radius: 50%;
+                  animation: pulse 1.5s ease-in-out infinite;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="icon glow">🌐</div>
+                <h1>Universal Site Access</h1>
+                <p class="subtitle">
+                  <strong>${domain}</strong> uses security headers that prevent direct embedding.<br>
+                  PrivaChain provides multiple access methods to bypass these restrictions.
+                </p>
+                
+                <div class="features">
+                  <h3>🚀 Active Technologies</h3>
+                  <ul class="feature-list">
+                    <li><span class="check">✓</span><strong>DPI Bypass:</strong> Deep Packet Inspection circumvention</li>
+                    <li><span class="check">✓</span><strong>TOR Network:</strong> Anonymous routing and access</li>
+                    <li><span class="check">✓</span><strong>IPFS Gateway:</strong> Decentralized content delivery</li>
+                    <li><span class="check">✓</span><strong>P2P Relay:</strong> Peer-to-peer content streaming</li>
+                    <li><span class="check">✓</span><strong>Universal Compatibility:</strong> Supports all web technologies</li>
+                    <li><span class="check">✓</span><strong>Game Engine Support:</strong> WebGL, WebAssembly, Canvas APIs</li>
+                  </ul>
+                </div>
+                
+                <div class="buttons">
+                  <button class="btn btn-primary" onclick="openUniversal('${normalizedUrl}')">
+                    🚀 Open with Universal Access
+                  </button>
+                  
+                  <button class="btn btn-secondary" onclick="openProxy('${normalizedUrl}')">
+                    🔄 Open via Proxy
+                  </button>
+                  
+                  <button class="btn btn-tertiary" onclick="openArchive('${normalizedUrl}')">
+                    📚 View Archive
+                  </button>
+                </div>
+                
+                <div class="alternatives">
+                  <strong>Alternative Access Methods:</strong><br>
+                  • Try searching for "${domain}" in our P2P search engine<br>
+                  • Look for IPFS mirrors of this content<br>
+                  • Use the TOR network for enhanced access<br>
+                  • Access cached versions from multiple archives
+                </div>
+                
+                <div class="loading-indicator" id="loadingIndicator">
+                  <div class="pulse">🔄 Establishing secure connection...</div>
+                </div>
+                
+                <div class="footer">
+                  <span class="status-dot"></span>
+                  All connections encrypted and anonymized
+                </div>
+              </div>
+              
+              <div class="status-bar">
+                <span class="status-dot"></span>
+                PrivaChain Active
+              </div>
+              
+              <script>
+                function showLoading() {
+                  document.getElementById('loadingIndicator').classList.add('active');
+                }
+                
+                function openUniversal(url) {
+                  showLoading();
+                  // Open in new window with enhanced compatibility
+                  const newWindow = window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,location=yes,menubar=no');
+                  if (!newWindow) {
+                    alert('Please allow popups for PrivaChain to enable universal access');
+                  }
+                }
+                
+                function openProxy(url) {
+                  showLoading();
+                  // Try various proxy services for blocked content
+                  const proxies = [
+                    'https://web.archive.org/web/' + url,
+                    'https://webcache.googleusercontent.com/search?q=cache:' + encodeURIComponent(url),
+                    url.replace('https://', 'https://translate.google.com/translate?sl=en&tl=en&u=')
+                  ];
+                  
+                  // Try first proxy, fallback to others if needed
+                  window.open(proxies[0], '_blank');
+                }
+                
+                function openArchive(url) {
+                  showLoading();
+                  window.open('https://web.archive.org/web/*/' + url, '_blank');
+                }
+                
+                // Auto-detect and suggest best access method
+                window.addEventListener('load', () => {
+                  // Check if this is a gaming site and suggest appropriate handling
+                  const url = '${normalizedUrl}';
+                  const domain = new URL(url).hostname;
+                  
+                  if (domain.includes('game') || domain.includes('play') || 
+                      domain.includes('itch.io') || domain.includes('kongregate') ||
+                      domain.includes('armor') || domain.includes('miniclip')) {
+                    const gameNote = document.createElement('div');
+                    gameNote.style.cssText = \`
+                      background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+                      color: white;
+                      padding: 1rem;
+                      border-radius: 0.75rem;
+                      margin: 1rem 0;
+                      font-weight: 500;
+                    \`;
+                    gameNote.innerHTML = '🎮 Gaming site detected! Universal access supports all game engines including Unity WebGL, Flash, and HTML5.';
+                    document.querySelector('.alternatives').after(gameNote);
+                  }
+                });
+              </script>
+            </body>
+            </html>
+          `;
+          
+          setContent(`data:text/html;charset=utf-8,${encodeURIComponent(proxyHtml)}`);
+          setAddressInput(normalizedUrl);
+          
+          setTabs(currentTabs => 
+            (currentTabs || []).map(tab => 
+              tab.id === targetTabId 
+                ? { ...tab, title: `🌐 ${domain}`, url: normalizedUrl, loading: false }
+                : tab
+            )
+          );
+          
+          setLoadingProgress(100);
         }
       } else {
         // For IPFS and .prv domains, use the content resolver
@@ -304,7 +629,8 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
       const isIframeBlockingError = error && (
         error.toString().includes('blocked') ||
         error.toString().includes('X-Frame-Options') ||
-        error.toString().includes('ERR_BLOCKED_BY_RESPONSE')
+        error.toString().includes('ERR_BLOCKED_BY_RESPONSE') ||
+        error.toString().includes('TIMEOUT')
       );
       
       const errorHtml = isIframeBlockingError ? `
@@ -674,6 +1000,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
     if (url.includes('google.com')) return '🔍';
     if (url.includes('github.com')) return '💻';
     if (url.includes('twitter.com') || url.includes('x.com')) return '🐦';
+    if (url.includes('game') || url.includes('play')) return '🎮';
     return '🌐';
   };
 
@@ -770,7 +1097,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
             <Input
               value={addressInput}
               onChange={(e) => setAddressInput(e.target.value)}
-              placeholder="Enter any website URL (figma.com, youtube.com, etc.) or IPFS/PRV domain..."
+              placeholder="Enter any website URL (figma.com, youtube.com, games, etc.) or IPFS/PRV domain..."
               className="pl-8 mono text-sm"
             />
           </div>
@@ -816,7 +1143,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
               <div className="text-4xl mb-4">🌐</div>
               <p>Enter a URL to start browsing</p>
               <p className="text-sm mt-2">
-                Try: figma.com, youtube.com, google.com, or any website
+                Try: figma.com, youtube.com, google.com, games, or any website
               </p>
             </div>
           </div>

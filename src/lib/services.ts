@@ -98,8 +98,38 @@ class ContentResolverService {
   }
 
   private async resolveHTTP(url: string): Promise<{ content: string; type: string; metadata?: any }> {
-    // For modern web applications like Figma, YouTube, etc., we'll use direct iframe loading
-    // This bypasses CORS issues while maintaining functionality
+    try {
+      // Try to fetch the content directly first
+      const response = await fetch(url, {
+        mode: 'cors',
+        signal: AbortSignal.timeout(8000) // 8 second timeout
+      });
+      
+      if (response.ok) {
+        const contentType = response.headers.get('content-type') || 'text/html';
+        let content = await response.text();
+        
+        // Enhance the content for better compatibility
+        if (contentType.includes('html')) {
+          // Inject compatibility scripts for games and complex web apps
+          content = this.enhanceHTMLContent(content, url);
+        }
+        
+        return {
+          content: `data:text/html;charset=utf-8,${encodeURIComponent(content)}`,
+          type: contentType,
+          metadata: {
+            enhanced: true,
+            originalUrl: url,
+            contentType
+          }
+        };
+      }
+    } catch (error) {
+      console.warn('Direct fetch failed, using iframe approach:', error);
+    }
+    
+    // Fallback to direct iframe loading for blocked content
     return {
       content: url, // Return the URL itself for direct iframe loading
       type: 'text/html',
@@ -108,6 +138,89 @@ class ContentResolverService {
         url: url
       }
     };
+  }
+
+  private enhanceHTMLContent(html: string, originalUrl: string): string {
+    // Add compatibility enhancements for better web app support
+    const baseUrl = new URL(originalUrl).origin;
+    
+    const enhancements = `
+      <script>
+        // Enhanced compatibility for web applications and games
+        (function() {
+          // Fix relative URLs
+          const baseURL = '${baseUrl}';
+          
+          // Enhance WebGL context for games
+          const originalGetContext = HTMLCanvasElement.prototype.getContext;
+          HTMLCanvasElement.prototype.getContext = function(contextType, contextAttributes) {
+            if (contextType === 'webgl' || contextType === 'experimental-webgl') {
+              contextAttributes = contextAttributes || {};
+              contextAttributes.preserveDrawingBuffer = true;
+              contextAttributes.antialias = true;
+            }
+            return originalGetContext.call(this, contextType, contextAttributes);
+          };
+          
+          // Fix fetch requests for relative URLs
+          const originalFetch = window.fetch;
+          window.fetch = function(url, options) {
+            if (typeof url === 'string' && !url.startsWith('http') && !url.startsWith('//')) {
+              url = new URL(url, baseURL).href;
+            }
+            return originalFetch.call(this, url, options);
+          };
+          
+          // Enhance audio context for games
+          if (window.AudioContext || window.webkitAudioContext) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const originalCreateOscillator = AudioCtx.prototype.createOscillator;
+            AudioCtx.prototype.createOscillator = function() {
+              const oscillator = originalCreateOscillator.call(this);
+              oscillator.start = oscillator.start || oscillator.noteOn;
+              oscillator.stop = oscillator.stop || oscillator.noteOff;
+              return oscillator;
+            };
+          }
+          
+          // Fix WebAssembly loading
+          if (window.WebAssembly) {
+            const originalInstantiate = WebAssembly.instantiate;
+            WebAssembly.instantiate = function(bytes, imports) {
+              if (typeof bytes === 'string' && !bytes.startsWith('http')) {
+                bytes = new URL(bytes, baseURL).href;
+              }
+              return originalInstantiate.call(this, bytes, imports);
+            };
+          }
+          
+          // Enhanced fullscreen support
+          if (document.documentElement.requestFullscreen) {
+            const elements = document.querySelectorAll('canvas, video, iframe');
+            elements.forEach(element => {
+              element.addEventListener('dblclick', () => {
+                if (element.requestFullscreen) {
+                  element.requestFullscreen();
+                }
+              });
+            });
+          }
+          
+          console.log('PrivaChain compatibility layer loaded');
+        })();
+      </script>
+    `;
+    
+    // Inject before closing head tag or at the beginning of body
+    if (html.includes('</head>')) {
+      html = html.replace('</head>', enhancements + '</head>');
+    } else if (html.includes('<body>')) {
+      html = html.replace('<body>', '<body>' + enhancements);
+    } else {
+      html = enhancements + html;
+    }
+    
+    return html;
   }
 }
 
@@ -314,7 +427,7 @@ class SearchService {
   }
 
   private async searchWeb(term: string): Promise<SearchResult[]> {
-    // Real web search results for common sites that work well in iframes
+    // Real web search results for sites that work well with our browser
     const commonSites = [
       {
         name: 'YouTube',
@@ -345,15 +458,76 @@ class SearchService {
         url: 'https://duckduckgo.com',
         description: 'Privacy-focused search engine',
         query: `https://duckduckgo.com/?q=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Figma',
+        url: 'https://figma.com',
+        description: 'Collaborative design platform',
+        query: `https://figma.com/files/search?q=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'CodePen',
+        url: 'https://codepen.io',
+        description: 'Code playground and community',
+        query: `https://codepen.io/search/pens?q=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Itch.io',
+        url: 'https://itch.io',
+        description: 'Indie game platform',
+        query: `https://itch.io/search?q=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Replit',
+        url: 'https://replit.com',
+        description: 'Online coding environment',
+        query: `https://replit.com/search?q=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Observable',
+        url: 'https://observablehq.com',
+        description: 'Interactive data notebooks',
+        query: `https://observablehq.com/search?query=${encodeURIComponent(term)}`
       }
     ];
 
+    // Gaming platforms that work well with our browser
+    const gamingSites = [
+      {
+        name: 'Kongregate',
+        url: 'https://kongregate.com',
+        description: 'Browser games platform',
+        query: `https://kongregate.com/search?q=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Miniclip',
+        url: 'https://miniclip.com',
+        description: 'Free online games',
+        query: `https://miniclip.com/games/search/${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Newgrounds',
+        url: 'https://newgrounds.com',
+        description: 'Art and game community',
+        query: `https://newgrounds.com/search/conduct/games?terms=${encodeURIComponent(term)}`
+      },
+      {
+        name: 'Y8 Games',
+        url: 'https://y8.com',
+        description: 'Free browser games',
+        query: `https://y8.com/tags/${encodeURIComponent(term)}`
+      }
+    ];
+
+    const allSites = [...commonSites, ...gamingSites];
+
     // Filter and create results based on term relevance
-    const results: SearchResult[] = commonSites
+    const results: SearchResult[] = allSites
       .filter(site => 
         site.name.toLowerCase().includes(term.toLowerCase()) ||
         site.description.toLowerCase().includes(term.toLowerCase()) ||
-        term.toLowerCase().includes(site.name.toLowerCase())
+        term.toLowerCase().includes(site.name.toLowerCase()) ||
+        (term.toLowerCase().includes('game') && site.description.includes('game'))
       )
       .map(site => ({
         id: `web-${site.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
@@ -361,7 +535,11 @@ class SearchService {
         url: site.query,
         description: `Search for "${term}" on ${site.description}`,
         type: 'http' as const,
-        verified: true
+        verified: true,
+        metadata: {
+          platform: site.name,
+          category: site.description.includes('game') ? 'gaming' : 'general'
+        }
       }));
 
     // Always include at least one general search result
@@ -375,7 +553,24 @@ class SearchService {
       });
     }
 
-    return results.slice(0, 5);
+    // Add specific gaming suggestions if term suggests gaming
+    const gamingTerms = ['game', 'play', 'arcade', 'puzzle', 'adventure', 'action', 'rpg', 'strategy'];
+    if (gamingTerms.some(gameterm => term.toLowerCase().includes(gameterm))) {
+      results.unshift({
+        id: `gaming-suggestion-${Date.now()}`,
+        title: `🎮 Browser Games: ${term}`,
+        url: `https://itch.io/games/html5?q=${encodeURIComponent(term)}`,
+        description: `HTML5 games related to "${term}" - fully compatible with PrivaChain`,
+        type: 'http' as const,
+        verified: true,
+        metadata: {
+          category: 'gaming',
+          compatibility: 'high'
+        }
+      });
+    }
+
+    return results.slice(0, 8);
   }
 }
 

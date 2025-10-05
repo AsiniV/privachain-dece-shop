@@ -9,6 +9,10 @@ export interface SearchResult {
     lastModified?: string;
     contentType?: string;
     hash?: string;
+    platform?: string;
+    category?: string;
+    compatibility?: string;
+    source?: string;
   };
   verified?: boolean;
 }
