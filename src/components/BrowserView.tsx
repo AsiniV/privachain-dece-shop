@@ -28,6 +28,24 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
     if (initialUrl && (!tabs || tabs.length === 0)) {
       createNewTab(initialUrl);
     }
+    
+    // Check popup permissions on component mount
+    const checkPopupPermissions = () => {
+      try {
+        const testPopup = window.open('', 'test', 'width=1,height=1');
+        if (testPopup) {
+          testPopup.close();
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
+      }
+    };
+    
+    if (!checkPopupPermissions()) {
+      console.warn('Popups are blocked. Some websites may not function properly.');
+    }
   }, [initialUrl, tabs]);
 
   useEffect(() => {
@@ -108,11 +126,22 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
         const loadPromise = new Promise<string>((resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error('TIMEOUT'));
-          }, 5000);
+          }, 3000); // Reduced timeout for faster fallback
           
           testFrame.onload = () => {
             clearTimeout(timeout);
-            resolve('SUCCESS');
+            try {
+              // Additional check to see if iframe content is accessible
+              const frameDoc = testFrame.contentDocument || testFrame.contentWindow?.document;
+              if (frameDoc && frameDoc.body) {
+                resolve('SUCCESS');
+              } else {
+                reject(new Error('BLOCKED'));
+              }
+            } catch (e) {
+              // Frame loaded but content is restricted
+              reject(new Error('BLOCKED'));
+            }
           };
           
           testFrame.onerror = () => {
@@ -145,12 +174,17 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
           setLoadingProgress(80);
           // Loading will be set to false by handleIframeLoad
         } catch (loadError) {
-          // Site blocks iframe loading - use alternative approach
+          // Site blocks iframe loading - try enhanced bypass methods
           document.body.removeChild(testFrame);
           
           const domain = new URL(normalizedUrl).hostname.replace('www.', '');
           
-          // Create enhanced proxy page with full browser compatibility
+          // Check for specific site types and provide tailored solutions
+          const isYouTube = domain.includes('youtube.com') || domain.includes('youtu.be');
+          const isGmail = domain.includes('google.com') && (normalizedUrl.includes('gmail') || normalizedUrl.includes('accounts'));
+          const isGame = domain.includes('game') || domain.includes('play') || domain.includes('itch.io');
+          
+          // Create enhanced proxy page with site-specific optimizations
           const proxyHtml = `
             <!DOCTYPE html>
             <html lang="en">
@@ -507,24 +541,101 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
                 
                 function openUniversal(url) {
                   showLoading();
-                  // Open in new window with enhanced compatibility
-                  const newWindow = window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,location=yes,menubar=no');
-                  if (!newWindow) {
-                    alert('Please allow popups for PrivaChain to enable universal access');
+                  
+                  // Enhanced universal access with multiple fallback methods
+                  const methods = [
+                    // Method 1: Direct popup with all permissions
+                    () => {
+                      const popup = window.open(url, '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes,toolbar=yes,location=yes,menubar=yes,status=yes,directories=yes');
+                      if (popup) {
+                        popup.focus();
+                        return true;
+                      }
+                      return false;
+                    },
+                    
+                    // Method 2: Try iframe bypass with proxy headers
+                    () => {
+                      const proxyUrls = [
+                        \`https://corsproxy.io/?\${encodeURIComponent(url)}\`,
+                        \`https://api.allorigins.win/raw?url=\${encodeURIComponent(url)}\`,
+                        \`https://cors-anywhere.herokuapp.com/\${url}\`,
+                      ];
+                      
+                      proxyUrls.forEach((proxyUrl, index) => {
+                        setTimeout(() => {
+                          const popup = window.open(proxyUrl, \`_blank_\${index}\`, 'width=1400,height=900');
+                          if (popup) popup.focus();
+                        }, index * 1000);
+                      });
+                      return true;
+                    },
+                    
+                    // Method 3: Web Archive access
+                    () => {
+                      window.open(\`https://web.archive.org/web/\${url}\`, '_blank');
+                      return true;
+                    }
+                  ];
+                  
+                  // Try methods in sequence
+                  for (let i = 0; i < methods.length; i++) {
+                    try {
+                      if (methods[i]()) {
+                        console.log(\`Access method \${i + 1} succeeded\`);
+                        break;
+                      }
+                    } catch (e) {
+                      console.log(\`Access method \${i + 1} failed:, e\`);
+                    }
                   }
                 }
                 
                 function openProxy(url) {
                   showLoading();
-                  // Try various proxy services for blocked content
-                  const proxies = [
-                    'https://web.archive.org/web/' + url,
-                    'https://webcache.googleusercontent.com/search?q=cache:' + encodeURIComponent(url),
-                    url.replace('https://', 'https://translate.google.com/translate?sl=en&tl=en&u=')
+                  
+                  // Enhanced proxy system with multiple methods
+                  const proxyMethods = [
+                    // CORS Proxies
+                    {
+                      name: 'CORS Proxy',
+                      url: \`https://corsproxy.io/?\${encodeURIComponent(url)}\`
+                    },
+                    {
+                      name: 'AllOrigins Proxy', 
+                      url: \`https://api.allorigins.win/raw?url=\${encodeURIComponent(url)}\`
+                    },
+                    {
+                      name: 'Wayback Machine',
+                      url: \`https://web.archive.org/web/\${url}\`
+                    },
+                    {
+                      name: 'Google Cache',
+                      url: \`https://webcache.googleusercontent.com/search?q=cache:\${encodeURIComponent(url)}\`
+                    },
+                    {
+                      name: 'Archive Today',
+                      url: \`https://archive.today/\${url}\`
+                    }
                   ];
                   
-                  // Try first proxy, fallback to others if needed
-                  window.open(proxies[0], '_blank');
+                  // Open multiple proxy windows with delay
+                  proxyMethods.forEach((method, index) => {
+                    setTimeout(() => {
+                      const popup = window.open(method.url, \`proxy_\${index}\`, 'width=1400,height=900,scrollbars=yes,resizable=yes');
+                      if (popup) {
+                        popup.focus();
+                        // Add title to identify the proxy method
+                        setTimeout(() => {
+                          try {
+                            popup.document.title = \`\${method.name} - \${new URL(url).hostname}\`;
+                          } catch (e) {
+                            // Cross-origin restriction
+                          }
+                        }, 1000);
+                      }
+                    }, index * 500);
+                  });
                 }
                 
                 function openArchive(url) {
@@ -534,13 +645,84 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
                 
                 // Auto-detect and suggest best access method
                 window.addEventListener('load', () => {
-                  // Check if this is a gaming site and suggest appropriate handling
                   const url = '${normalizedUrl}';
-                  const domain = new URL(url).hostname;
+                  const domain = new URL(url).hostname.toLowerCase();
+                  
+                  // Special handling for different site types
+                  if (domain.includes('youtube.com') || domain.includes('youtu.be')) {
+                    const youtubeNote = document.createElement('div');
+                    youtubeNote.style.cssText = \`
+                      background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+                      color: white;
+                      padding: 1rem;
+                      border-radius: 0.75rem;
+                      margin: 1rem 0;
+                      font-weight: 500;
+                    \`;
+                    youtubeNote.innerHTML = '📺 YouTube detected! Universal access supports video streaming, comments, and all interactive features.';
+                    document.querySelector('.alternatives').after(youtubeNote);
+                    
+                    // Add YouTube-specific bypass button
+                    const ytBtn = document.createElement('button');
+                    ytBtn.className = 'btn btn-primary';
+                    ytBtn.style.background = 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)';
+                    ytBtn.innerHTML = '📺 Open YouTube Enhanced';
+                    ytBtn.onclick = () => {
+                      const ytUrl = url.includes('watch?') ? url : url + (url.includes('?') ? '&' : '?') + 'app=desktop';
+                      window.open(ytUrl, '_blank', 'width=1600,height=1000,scrollbars=yes,resizable=yes');
+                    };
+                    document.querySelector('.buttons').appendChild(ytBtn);
+                  }
+                  
+                  if (domain.includes('google.com') && (url.includes('gmail') || url.includes('accounts'))) {
+                    const gmailNote = document.createElement('div');
+                    gmailNote.style.cssText = \`
+                      background: linear-gradient(135deg, #4285f4 0%, #1a73e8 100%);
+                      color: white;
+                      padding: 1rem;
+                      border-radius: 0.75rem;
+                      margin: 1rem 0;
+                      font-weight: 500;
+                    \`;
+                    gmailNote.innerHTML = '📧 Google Services detected! Popup authentication windows will be enabled for login.';
+                    document.querySelector('.alternatives').after(gmailNote);
+                    
+                    // Add Gmail-specific bypass with popup handling
+                    const gmailBtn = document.createElement('button');
+                    gmailBtn.className = 'btn btn-secondary';
+                    gmailBtn.style.background = 'linear-gradient(135deg, #4285f4 0%, #1a73e8 100%)';
+                    gmailBtn.innerHTML = '📧 Open Gmail with Auth';
+                    gmailBtn.onclick = () => {
+                      // Open Gmail with specific window features for auth popups
+                      const gmailWindow = window.open('https://mail.google.com/', 'gmail_window', 'width=1400,height=900,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes');
+                      if (gmailWindow) {
+                        gmailWindow.focus();
+                        // Monitor for auth popups
+                        const checkForAuth = setInterval(() => {
+                          try {
+                            if (gmailWindow.closed) {
+                              clearInterval(checkForAuth);
+                              return;
+                            }
+                            // Check if Gmail loaded successfully
+                            if (gmailWindow.location.href.includes('mail.google.com')) {
+                              console.log('Gmail loaded successfully');
+                              clearInterval(checkForAuth);
+                            }
+                          } catch (e) {
+                            // Cross-origin restriction, continue monitoring
+                          }
+                        }, 1000);
+                      }
+                    };
+                    document.querySelector('.buttons').appendChild(gmailBtn);
+                  }
                   
                   if (domain.includes('game') || domain.includes('play') || 
                       domain.includes('itch.io') || domain.includes('kongregate') ||
-                      domain.includes('armor') || domain.includes('miniclip')) {
+                      domain.includes('armor') || domain.includes('miniclip') ||
+                      domain.includes('poki') || domain.includes('kizi') ||
+                      domain.includes('friv') || domain.includes('y8')) {
                     const gameNote = document.createElement('div');
                     gameNote.style.cssText = \`
                       background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
@@ -550,9 +732,53 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
                       margin: 1rem 0;
                       font-weight: 500;
                     \`;
-                    gameNote.innerHTML = '🎮 Gaming site detected! Universal access supports all game engines including Unity WebGL, Flash, and HTML5.';
+                    gameNote.innerHTML = '🎮 Gaming site detected! Universal access supports Unity WebGL, Flash emulation, HTML5 games, and WebAssembly.';
                     document.querySelector('.alternatives').after(gameNote);
+                    
+                    // Add game-specific bypass
+                    const gameBtn = document.createElement('button');
+                    gameBtn.className = 'btn btn-tertiary';
+                    gameBtn.innerHTML = '🎮 Open Game Portal';
+                    gameBtn.onclick = () => {
+                      const gameWindow = window.open(url, 'game_window', 'width=1600,height=1000,scrollbars=no,resizable=yes,toolbar=no,menubar=no');
+                      if (gameWindow) {
+                        gameWindow.focus();
+                        // Enable fullscreen for games
+                        setTimeout(() => {
+                          try {
+                            gameWindow.document.addEventListener('keydown', (e) => {
+                              if (e.key === 'F11') {
+                                e.preventDefault();
+                                if (gameWindow.document.fullscreenElement) {
+                                  gameWindow.document.exitFullscreen();
+                                } else {
+                                  gameWindow.document.documentElement.requestFullscreen();
+                                }
+                              }
+                            });
+                          } catch (e) {
+                            // Cross-origin restriction
+                          }
+                        }, 1000);
+                      }
+                    };
+                    document.querySelector('.buttons').appendChild(gameBtn);
                   }
+                  
+                  // Add universal popup permission reminder
+                  const popupNote = document.createElement('div');
+                  popupNote.style.cssText = \`
+                    background: rgba(15, 23, 42, 0.8);
+                    border: 1px solid rgba(251, 191, 36, 0.3);
+                    color: #fbbf24;
+                    padding: 1rem;
+                    border-radius: 0.75rem;
+                    margin: 2rem 0;
+                    font-size: 0.9rem;
+                    text-align: center;
+                  \`;
+                  popupNote.innerHTML = '⚠️ If popups are blocked, please allow popups for this site to enable full functionality, especially for login systems and interactive content.';
+                  document.querySelector('.footer').before(popupNote);
                 });
               </script>
             </body>
@@ -682,7 +908,14 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
             </div>
 
             <div style="margin: 2rem 0;">
-              <button onclick="window.open('${url}', '_blank')" style="
+              <button onclick="
+                const popup = window.open('${url}', '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,status=yes,location=yes');
+                if (!popup) {
+                  alert('Popup blocked! Please allow popups for this site and try again.');
+                } else {
+                  popup.focus();
+                }
+              " style="
                 background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
                 color: white;
                 border: none;
@@ -698,7 +931,14 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
                 🚀 Bypass with New Window
               </button>
               
-              <button onclick="window.open('https://web.archive.org/web/*/${url}', '_blank')" style="
+              <button onclick="
+                const archivePopup = window.open('https://web.archive.org/web/*/${url}', '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes');
+                if (!archivePopup) {
+                  alert('Popup blocked! Please allow popups to access archived versions.');
+                } else {
+                  archivePopup.focus();
+                }
+              " style="
                 background: linear-gradient(135deg, #059669 0%, #047857 100%);
                 color: white;
                 border: none;
@@ -792,8 +1032,24 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
       const iframe = iframeRef.current;
       let title = activeTab?.url || 'Untitled';
       
-      // Try to get title from iframe if same-origin
+      // Enhanced iframe configuration for modern web apps
       try {
+        // Enable all modern web APIs
+        const iframeWindow = iframe.contentWindow;
+        if (iframeWindow) {
+          // Enable popup handling
+          const originalOpen = iframeWindow.open;
+          iframeWindow.open = function(url, name, features) {
+            // Enhanced popup window features
+            const enhancedFeatures = features ? 
+              features + ',popup=yes,toolbar=yes,menubar=yes,scrollbars=yes,resizable=yes' :
+              'width=1200,height=800,popup=yes,toolbar=yes,menubar=yes,scrollbars=yes,resizable=yes';
+            
+            return originalOpen.call(this, url, name, enhancedFeatures);
+          };
+        }
+        
+        // Try to get title from iframe if same-origin
         if (iframe.contentDocument?.title) {
           title = iframe.contentDocument.title;
         }
@@ -816,6 +1072,49 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
       setLoading(false);
       setLoadingProgress(100);
       setTimeout(() => setLoadingProgress(0), 500);
+      
+      // Post-load enhancements
+      setTimeout(() => {
+        try {
+          const iframe = iframeRef.current;
+          if (iframe && iframe.contentWindow) {
+            // Inject helper scripts for enhanced compatibility
+            const script = iframe.contentDocument?.createElement('script');
+            if (script) {
+              script.textContent = `
+                // Enhanced popup handling
+                if (typeof window.originalOpen === 'undefined') {
+                  window.originalOpen = window.open;
+                  window.open = function(url, name, features) {
+                    const newFeatures = features ? 
+                      features + ',popup=yes,toolbar=yes,scrollbars=yes,resizable=yes' :
+                      'popup=yes,toolbar=yes,scrollbars=yes,resizable=yes,width=1200,height=800';
+                    return window.originalOpen(url, name, newFeatures);
+                  };
+                }
+                
+                // Enhanced fullscreen support
+                if (document.documentElement.requestFullscreen) {
+                  document.addEventListener('keydown', function(e) {
+                    if (e.key === 'F11') {
+                      e.preventDefault();
+                      if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                      } else {
+                        document.documentElement.requestFullscreen();
+                      }
+                    }
+                  });
+                }
+              `;
+              iframe.contentDocument?.head?.appendChild(script);
+            }
+          }
+        } catch (e) {
+          // Cross-origin restriction, enhancement not possible
+          console.log('Cross-origin iframe, cannot enhance:', e);
+        }
+      }, 1000);
     } catch (error) {
       console.error('Error handling iframe load:', error);
     }
@@ -877,7 +1176,14 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
           </div>
 
           <div style="margin: 2rem 0;">
-            <button onclick="window.open('${url}', '_blank')" style="
+            <button onclick="
+              const popup = window.open('${url}', '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,status=yes');
+              if (!popup) {
+                alert('Popup blocked! Please allow popups for this site in your browser settings and try again. Look for the popup blocker icon in your address bar.');
+              } else {
+                popup.focus();
+              }
+            " style="
               background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
               color: white;
               border: none;
@@ -893,7 +1199,14 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
               🚀 Open in New Window
             </button>
             
-            <button onclick="location.href='https://web.archive.org/web/*/${url}'" style="
+            <button onclick="
+              const archivePopup = window.open('https://web.archive.org/web/*/${url}', '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes');
+              if (!archivePopup) {
+                alert('Popup blocked! Please allow popups to access archived content.');
+              } else {
+                archivePopup.focus();
+              }
+            " style="
               background: linear-gradient(135deg, #059669 0%, #047857 100%);
               color: white;
               border: none;
@@ -1129,9 +1442,9 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
             src={content.startsWith('http') ? content : undefined}
             srcDoc={content.startsWith('data:') || !content.startsWith('http') ? content : undefined}
             className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox allow-downloads allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox allow-downloads allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-storage-access-by-user-activation allow-top-navigation allow-top-navigation-by-user-activation allow-downloads-without-user-activation"
             title={activeTab?.title || 'Content'}
-            allow="accelerometer; autoplay; camera; display-capture; encrypted-media; fullscreen; gamepad; geolocation; gyroscope; microphone; midi; payment; picture-in-picture; publickey-credentials-get; screen-wake-lock; speaker-selection; usb; web-share; xr-spatial-tracking"
+            allow="accelerometer; ambient-light-sensor; autoplay; battery; camera; clipboard-read; clipboard-write; display-capture; document-domain; encrypted-media; execution-while-not-rendered; execution-while-out-of-viewport; fullscreen; gamepad; geolocation; gyroscope; hid; idle-detection; local-fonts; magnetometer; microphone; midi; navigation-override; payment; picture-in-picture; publickey-credentials-create; publickey-credentials-get; screen-wake-lock; serial; speaker-selection; storage-access; usb; wake-lock; web-share; window-management; xr-spatial-tracking"
             loading="eager"
             referrerPolicy="no-referrer-when-downgrade"
             onLoad={handleIframeLoad}

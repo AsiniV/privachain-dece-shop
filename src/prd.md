@@ -32,15 +32,20 @@
 
 ## Essential Features
 
-### Full-Capability Web Browser
-- **What**: Complete iframe-based browser engine supporting all modern web applications
-- **Why**: Users need unrestricted access to complex applications like Figma, YouTube, Google Workspace
-- **Success Criteria**: Complex web applications load and function identically to mainstream browsers
+### Universal Web Application Support
+- **What**: Complete compatibility layer for complex web applications including YouTube, Gmail, Google Services, browser-based games, and interactive platforms with full popup and authentication support
+- **Why**: Users expect seamless access to all modern web applications without functionality compromises, including login systems, media streaming, and complex interactive content
+- **Success Criteria**: YouTube videos play with full controls, Gmail login and popups work correctly, browser games load with WebGL/WebAssembly support, all interactive features function properly
 
-### Multi-Protocol Content Support
-- **What**: Unified interface for HTTP/HTTPS, IPFS, and .prv domains
-- **Why**: Enables transition to decentralized web while maintaining traditional web access
-- **Success Criteria**: Seamless navigation between different protocol types with appropriate loading indicators
+### Enhanced Iframe Compatibility System
+- **What**: Advanced iframe configuration with comprehensive sandbox permissions, popup handling, and site-specific optimizations for platforms like YouTube, Gmail, and gaming sites
+- **Why**: Modern web applications require specific browser capabilities including popups, media access, storage, and authentication flows
+- **Success Criteria**: All modern web APIs supported, popup authentication works, media streaming functional, game engines (Unity WebGL, HTML5) load properly
+
+### Multi-Method Content Access
+- **What**: Intelligent content loading with multiple fallback strategies including direct loading, proxy services, web archives, and CORS bypasses
+- **Why**: Ensures content accessibility even when sites implement X-Frame-Options or other embedding restrictions
+- **Success Criteria**: Sites load through optimal method, graceful fallback when direct loading fails, clear user feedback about access methods
 
 ### Tabbed Browsing with State Persistence
 - **What**: Multiple tabs with persistent state, navigation history, and proper title detection
@@ -120,29 +125,36 @@
 ## Edge Cases & Problem Scenarios
 
 **Potential Obstacles**: 
-- CORS restrictions limiting website functionality
-- Cross-origin security policies affecting iframe behavior
-- Complex web apps requiring specific browser features
+- X-Frame-Options and CSP headers blocking iframe embedding
+- Popup blockers preventing authentication flows and interactive features
+- Cross-origin security policies affecting complex web application functionality
+- WebGL and WebAssembly compatibility for browser-based games
 
 **Edge Case Handling**: 
-- Comprehensive iframe sandbox permissions for maximum compatibility
-- Fallback loading strategies for restricted content
-- Clear error messaging with recovery options
+- Multiple content access methods with automatic fallback strategies
+- Enhanced popup detection and user guidance for enabling popup permissions
+- Site-specific compatibility layers for YouTube, Gmail, and gaming platforms
+- Comprehensive iframe sandbox configuration supporting all modern web APIs
 
 **Technical Constraints**: 
-- Browser security limitations for cross-origin content
-- Performance considerations for multiple complex tabs
-- Storage limitations for persistent state
+- Browser security model limitations for cross-origin iframe content
+- Popup blocker policies varying across different browsers
+- Memory and performance considerations for complex web applications in iframes
+- Authentication flow limitations when using proxy or fallback loading methods
 
 ## Implementation Considerations
 
 **Scalability Needs**: Efficient tab management, content caching, and state persistence
-**Testing Focus**: Complex web application compatibility, privacy feature effectiveness
+**Testing Focus**: YouTube video playback and functionality, Gmail login and popup authentication, browser game compatibility (Unity WebGL, HTML5), privacy feature effectiveness during complex application usage
+
 **Critical Questions**: 
-- How effectively do real privacy tools protect users without breaking web functionality?
+- Do authentication popups work correctly for Google services and other login systems?
+- Can YouTube and other video platforms stream content without restrictions?
+- How effectively do browser games (WebGL, WebAssembly) perform within the iframe environment?
+- What percentage of complex web applications achieve full functionality through our compatibility layer?
+- How well does the fallback system work when direct iframe loading is blocked?
 - Can WebRTC P2P messaging provide reliable communication without central infrastructure?
 - How well does multi-gateway IPFS resolution perform under various network conditions?
-- What level of DPI bypass can be achieved while maintaining user safety?
 
 ## Reflection
 
