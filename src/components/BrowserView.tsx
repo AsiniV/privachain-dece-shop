@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TabData } from '@/lib/types';
 import { contentResolver } from '@/lib/services';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const activeTab = tabs?.find(tab => tab.id === activeTabId);
 
@@ -72,53 +73,108 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
     setLoadingProgress(10);
 
     try {
+      // Normalize URL
+      let normalizedUrl = url.trim();
+      if (!normalizedUrl.startsWith('http') && !normalizedUrl.startsWith('ipfs://') && !normalizedUrl.endsWith('.prv')) {
+        // If it looks like a domain, add https://
+        if (normalizedUrl.includes('.') && !normalizedUrl.includes(' ')) {
+          normalizedUrl = `https://${normalizedUrl}`;
+        } else {
+          // Otherwise, search for it
+          normalizedUrl = `https://www.google.com/search?q=${encodeURIComponent(normalizedUrl)}`;
+        }
+      }
+
       setTabs(currentTabs => 
         (currentTabs || []).map(tab => 
           tab.id === targetTabId 
-            ? { ...tab, loading: true, url }
+            ? { ...tab, loading: true, url: normalizedUrl }
             : tab
         )
       );
 
       setLoadingProgress(30);
 
-      const result = await contentResolver.resolveContent(url);
-      
-      setLoadingProgress(70);
+      // For standard HTTP/HTTPS URLs, we'll load them directly in iframe
+      if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
+        setContent(normalizedUrl);
+        setAddressInput(normalizedUrl);
+        
+        // Extract domain for title until we get proper title
+        const domain = new URL(normalizedUrl).hostname;
+        let title = domain;
+        
+        setTabs(currentTabs => 
+          (currentTabs || []).map(tab => 
+            tab.id === targetTabId 
+              ? { ...tab, title, url: normalizedUrl, loading: true, canGoBack: true }
+              : tab
+          )
+        );
 
-      let title = 'Untitled';
-      if (result.content.includes('<title>')) {
-        const titleMatch = result.content.match(/<title[^>]*>([^<]+)<\/title>/i);
-        if (titleMatch) {
-          title = titleMatch[1].trim();
+        // Loading will be set to false by handleIframeLoad
+      } else {
+        // For IPFS and .prv domains, use the content resolver
+        const result = await contentResolver.resolveContent(normalizedUrl);
+        
+        setLoadingProgress(70);
+
+        // Check if content resolver returned a direct URL for iframe loading
+        if (result.metadata?.directLoad) {
+          setContent(result.content); // This is the URL
+          setAddressInput(normalizedUrl);
+          
+          const domain = new URL(result.content).hostname;
+          let title = domain;
+          
+          setTabs(currentTabs => 
+            (currentTabs || []).map(tab => 
+              tab.id === targetTabId 
+                ? { ...tab, title, url: normalizedUrl, loading: true, canGoBack: true }
+                : tab
+            )
+          );
+          // Loading will be set to false by handleIframeLoad
+        } else {
+          // Traditional content loading for IPFS/PRV
+          let title = 'Untitled';
+          if (result.content.includes('<title>')) {
+            const titleMatch = result.content.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch) {
+              title = titleMatch[1].trim();
+            }
+          } else if (normalizedUrl.startsWith('ipfs://')) {
+            title = `IPFS: ${normalizedUrl.slice(7, 20)}...`;
+          } else if (normalizedUrl.endsWith('.prv')) {
+            title = normalizedUrl.replace(/^https?:\/\//, '');
+          }
+
+          setContent(`data:text/html;charset=utf-8,${encodeURIComponent(result.content)}`);
+          setAddressInput(normalizedUrl);
+          
+          setTabs(currentTabs => 
+            (currentTabs || []).map(tab => 
+              tab.id === targetTabId 
+                ? { ...tab, title, url: normalizedUrl, loading: false, canGoBack: true }
+                : tab
+            )
+          );
+
+          setLoadingProgress(100);
         }
-      } else if (url.startsWith('ipfs://')) {
-        title = `IPFS: ${url.slice(7, 20)}...`;
-      } else if (url.endsWith('.prv')) {
-        title = url.replace(/^https?:\/\//, '');
       }
-
-      setContent(result.content);
-      setAddressInput(url);
-      
-      setTabs(currentTabs => 
-        (currentTabs || []).map(tab => 
-          tab.id === targetTabId 
-            ? { ...tab, title, url, loading: false, canGoBack: true }
-            : tab
-        )
-      );
-
-      setLoadingProgress(100);
     } catch (error) {
       console.error('Navigation failed:', error);
-      setContent(`
-        <div style="padding: 2rem; text-align: center; color: #ef4444;">
+      const errorHtml = `
+        <div style="padding: 2rem; text-align: center; color: #ef4444; font-family: system-ui;">
           <h2>Failed to load content</h2>
           <p>${error}</p>
           <p>URL: ${url}</p>
+          <button onclick="history.back()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 0.25rem; cursor: pointer;">Go Back</button>
         </div>
-      `);
+      `;
+      
+      setContent(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
       
       setTabs(currentTabs => 
         (currentTabs || []).map(tab => 
@@ -130,6 +186,62 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
     } finally {
       setLoading(false);
       setTimeout(() => setLoadingProgress(0), 1000);
+    }
+  };
+
+  const handleIframeLoad = () => {
+    if (!iframeRef.current || !activeTabId) return;
+    
+    try {
+      const iframe = iframeRef.current;
+      let title = activeTab?.url || 'Untitled';
+      
+      // Try to get title from iframe if same-origin
+      try {
+        if (iframe.contentDocument?.title) {
+          title = iframe.contentDocument.title;
+        }
+      } catch (e) {
+        // Cross-origin restriction, use URL-based title
+        if (activeTab?.url) {
+          const url = new URL(activeTab.url);
+          title = url.hostname;
+        }
+      }
+      
+      setTabs(currentTabs => 
+        (currentTabs || []).map(tab => 
+          tab.id === activeTabId 
+            ? { ...tab, title, loading: false }
+            : tab
+        )
+      );
+      
+      setLoading(false);
+      setLoadingProgress(100);
+      setTimeout(() => setLoadingProgress(0), 500);
+    } catch (error) {
+      console.error('Error handling iframe load:', error);
+    }
+  };
+
+  const goBack = () => {
+    if (iframeRef.current && activeTab?.canGoBack) {
+      try {
+        iframeRef.current.contentWindow?.history.back();
+      } catch (e) {
+        console.warn('Cannot navigate back in iframe');
+      }
+    }
+  };
+
+  const goForward = () => {
+    if (iframeRef.current && activeTab?.canGoForward) {
+      try {
+        iframeRef.current.contentWindow?.history.forward();
+      } catch (e) {
+        console.warn('Cannot navigate forward in iframe');
+      }
     }
   };
 
@@ -156,6 +268,11 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
     if (url.startsWith('ipfs://')) return '🗂️';
     if (url.endsWith('.prv')) return '🔗';
     if (url.includes('.onion')) return '🧅';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return '📺';
+    if (url.includes('figma.com')) return '🎨';
+    if (url.includes('google.com')) return '🔍';
+    if (url.includes('github.com')) return '💻';
+    if (url.includes('twitter.com') || url.includes('x.com')) return '🐦';
     return '🌐';
   };
 
@@ -221,6 +338,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
           size="sm"
           disabled={!activeTab?.canGoBack}
           className="px-2"
+          onClick={goBack}
         >
           <ArrowLeft className="w-4 h-4" />
         </Button>
@@ -229,6 +347,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
           size="sm"
           disabled={!activeTab?.canGoForward}
           className="px-2"
+          onClick={goForward}
         >
           <ArrowRight className="w-4 h-4" />
         </Button>
@@ -250,7 +369,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
             <Input
               value={addressInput}
               onChange={(e) => setAddressInput(e.target.value)}
-              placeholder="Enter IPFS hash, .prv domain, or URL..."
+              placeholder="Enter any website URL (figma.com, youtube.com, etc.) or IPFS/PRV domain..."
               className="pl-8 mono text-sm"
             />
           </div>
@@ -262,7 +381,9 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-accent border-accent">
             <span className="w-2 h-2 bg-accent rounded-full mr-1" />
-            Secure
+            {activeTab?.url?.startsWith('https://') ? 'Secure' : 
+             activeTab?.url?.startsWith('ipfs://') ? 'Decentralized' :
+             activeTab?.url?.endsWith('.prv') ? 'Private' : 'Connected'}
           </Badge>
         </div>
       </div>
@@ -276,10 +397,16 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
       <div className="flex-1 overflow-hidden">
         {content ? (
           <iframe
-            srcDoc={content}
+            ref={iframeRef}
+            src={content.startsWith('http') ? content : undefined}
+            srcDoc={content.startsWith('data:') || !content.startsWith('http') ? content : undefined}
             className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox allow-downloads allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"
             title={activeTab?.title || 'Content'}
+            allow="accelerometer; autoplay; camera; display-capture; encrypted-media; fullscreen; gamepad; geolocation; gyroscope; microphone; midi; payment; picture-in-picture; publickey-credentials-get; screen-wake-lock; speaker-selection; usb; web-share; xr-spatial-tracking"
+            loading="eager"
+            referrerPolicy="no-referrer-when-downgrade"
+            onLoad={handleIframeLoad}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -287,7 +414,7 @@ export function BrowserView({ initialUrl }: BrowserViewProps) {
               <div className="text-4xl mb-4">🌐</div>
               <p>Enter a URL to start browsing</p>
               <p className="text-sm mt-2">
-                Try: ipfs://QmHash, example.prv, or https://example.com
+                Try: figma.com, youtube.com, google.com, or any website
               </p>
             </div>
           </div>

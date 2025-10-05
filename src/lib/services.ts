@@ -60,41 +60,16 @@ class ContentResolverService {
   }
 
   private async resolveHTTP(url: string): Promise<{ content: string; type: string; metadata?: any }> {
-    const bypassEnabled = import.meta.env.VITE_DPI_BYPASS_ENABLED === 'true';
-    
-    try {
-      let response: Response;
-      
-      if (bypassEnabled) {
-        response = await this.fetchWithDPIBypass(url);
-      } else {
-        response = await fetch(url);
+    // For modern web applications like Figma, YouTube, etc., we'll use direct iframe loading
+    // This bypasses CORS issues while maintaining functionality
+    return {
+      content: url, // Return the URL itself for direct iframe loading
+      type: 'text/html',
+      metadata: {
+        directLoad: true,
+        url: url
       }
-      
-      const content = await response.text();
-      const result = {
-        content,
-        type: response.headers.get('content-type') || 'text/html',
-        metadata: {
-          status: response.status,
-          bypassUsed: bypassEnabled
-        }
-      };
-      
-      this.cache.set(url, result);
-      return result;
-    } catch (error) {
-      throw new Error(`Failed to resolve HTTP content: ${error}`);
-    }
-  }
-
-  private async fetchWithDPIBypass(url: string): Promise<Response> {
-    const proxyUrl = `https://cors-anywhere.herokuapp.com/${url}`;
-    return fetch(proxyUrl, {
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    });
+    };
   }
 }
 
