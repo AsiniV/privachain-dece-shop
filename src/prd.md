@@ -47,15 +47,30 @@
 - **Why**: Supports modern browsing workflows and multitasking
 - **Success Criteria**: Tab state survives app restarts, proper back/forward navigation
 
-### Secure Messenger Integration
-- **What**: End-to-end encrypted messaging system accessible within browser interface
-- **Why**: Provides secure communication without leaving the privacy-focused environment
-- **Success Criteria**: Messages encrypted, reliable delivery, integration with browser interface
+### Real-Time Privacy Monitoring
+- **What**: Live privacy analysis including fingerprint resistance testing, WebRTC leak detection, and network anonymity verification
+- **Why**: Users need immediate feedback on their privacy protection status and potential vulnerabilities
+- **Success Criteria**: Comprehensive privacy score with actionable recommendations, real-time threat detection
 
-### Privacy Dashboard & Monitoring
-- **What**: Real-time privacy analytics, tracker blocking, and security status
-- **Why**: Users need visibility into privacy protection and potential threats
-- **Success Criteria**: Clear privacy metrics, actionable security recommendations
+### WebRTC P2P Messaging System
+- **What**: Direct peer-to-peer messaging using WebRTC data channels with end-to-end encryption
+- **Why**: Provides truly decentralized communication without relying on central servers
+- **Success Criteria**: Successful P2P connection establishment, encrypted message delivery, connection status visibility
+
+### Multi-Gateway IPFS Resolution
+- **What**: Intelligent IPFS content loading using multiple gateways with fallback mechanisms
+- **Why**: Ensures reliable access to decentralized content even when individual gateways are unavailable
+- **Success Criteria**: Fast content loading, automatic failover, support for various content types
+
+### Zero-Knowledge Proof Generation
+- **What**: Client-side ZK proof generation for anonymous verification without revealing secrets
+- **Why**: Enables privacy-preserving authentication and verification scenarios
+- **Success Criteria**: Functional proof generation, secure secret handling, practical use cases
+
+### DPI Bypass Implementation
+- **What**: Real domain fronting and traffic obfuscation to bypass deep packet inspection
+- **Why**: Provides access to content in restrictive network environments
+- **Success Criteria**: Verified bypass capability, connection testing, minimal impact on performance
 
 ## Design Direction
 
@@ -119,10 +134,11 @@
 **Scalability Needs**: Efficient tab management, content caching, and state persistence
 **Testing Focus**: Complex web application compatibility, privacy feature effectiveness
 **Critical Questions**: 
-- How well do complex applications perform in iframe environment?
-- What privacy features provide genuine protection without breaking functionality?
-- How can we maintain security while maximizing compatibility?
+- How effectively do real privacy tools protect users without breaking web functionality?
+- Can WebRTC P2P messaging provide reliable communication without central infrastructure?
+- How well does multi-gateway IPFS resolution perform under various network conditions?
+- What level of DPI bypass can be achieved while maintaining user safety?
 
 ## Reflection
 
-This approach uniquely combines unrestricted web access with decentralized capabilities and privacy protection. Unlike existing privacy browsers that often sacrifice functionality, PrivaChain maintains full compatibility while adding enhanced security and decentralized features. The challenge is balancing maximum functionality with genuine privacy protection.
+This approach uniquely combines unrestricted web access with real decentralized capabilities and genuine privacy protection. Unlike mock implementations, PrivaChain provides functional WebRTC P2P messaging, real IPFS content resolution with multiple gateway support, actual privacy fingerprint testing, working DPI bypass mechanisms, and functional zero-knowledge proof generation. The implementation demonstrates that privacy and functionality can coexist when proper technical approaches are used.
