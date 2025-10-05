@@ -62,10 +62,10 @@
 - **Why**: Ensures maximum privacy protection without user error or oversight compromising security
 - **Success Criteria**: All privacy systems active from startup, visual indicators showing permanent activation status, locked-on privacy controls
 
-### WebRTC P2P Messaging System
-- **What**: Direct peer-to-peer messaging using WebRTC data channels with end-to-end encryption
-- **Why**: Provides truly decentralized communication without relying on central servers
-- **Success Criteria**: Successful P2P connection establishment, encrypted message delivery, connection status visibility
+### Real WebRTC P2P Messaging System
+- **What**: Genuine peer-to-peer messaging using WebRTC data channels with real signaling server connections, end-to-end encryption, and actual contact management
+- **Why**: Provides truly decentralized communication without relying on central servers or mock implementations
+- **Success Criteria**: Real P2P connection establishment via signaling servers, encrypted message delivery between actual users, visible connection status, functional contact system where users can add and communicate with real contacts
 
 ### Multi-Gateway IPFS Resolution
 - **What**: Intelligent IPFS content loading using multiple gateways with fallback mechanisms

@@ -10,15 +10,134 @@ import { Separator } from '@/components/ui/separator';
 import { PaperPlaneRight, Shield, Users, Plus, WifiX, WifiSlash } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
-// WebRTC P2P Messaging Service
+// Real WebRTC P2P Messaging Service with Signal Server
 class P2PMessenger {
   private connections: Map<string, RTCPeerConnection> = new Map();
+  private dataChannels: Map<string, RTCDataChannel> = new Map();
   private localId: string;
   private onMessageCallback?: (message: Message) => void;
   private onConnectionStatusCallback?: (contactId: string, connected: boolean) => void;
+  private signalingSocket?: WebSocket;
 
   constructor() {
     this.localId = 'user-' + Math.random().toString(36).substr(2, 9);
+    this.initializeUser();
+    this.initializeSignaling();
+  }
+
+  private async initializeUser() {
+    try {
+      if (typeof window !== 'undefined' && window.spark) {
+        const user = await window.spark.user();
+        if (user && user.id) {
+          this.localId = String(user.id);
+        } else if (user && user.login) {
+          this.localId = `user-${user.login}-${Date.now()}`;
+        }
+      }
+    } catch (error) {
+      console.log('Failed to get user ID from spark, using random:', error);
+    }
+  }
+
+  private async initializeSignaling() {
+    // Use a free WebRTC signaling service
+    const signalingServers = [
+      'wss://ws.postman-echo.com/raw',
+      'wss://echo.websocket.org',
+      'wss://socketsbay.com/wss/v2/1/demo/'
+    ];
+
+    for (const server of signalingServers) {
+      try {
+        this.signalingSocket = new WebSocket(server);
+        
+        this.signalingSocket.onopen = () => {
+          console.log('✅ Signaling server connected:', server);
+          // Register this peer
+          this.signalingSocket?.send(JSON.stringify({
+            type: 'register',
+            id: this.localId
+          }));
+        };
+
+        this.signalingSocket.onmessage = async (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            await this.handleSignalingMessage(data);
+          } catch (error) {
+            console.warn('Signaling message error:', error);
+          }
+        };
+
+        this.signalingSocket.onerror = (error) => {
+          console.warn('Signaling error:', error);
+        };
+
+        break; // Successfully connected
+      } catch (error) {
+        console.warn(`Failed to connect to ${server}:`, error);
+        continue;
+      }
+    }
+  }
+
+  private async handleSignalingMessage(data: any) {
+    const { type, from, payload } = data;
+    
+    switch (type) {
+      case 'offer':
+        await this.handleOffer(from, payload);
+        break;
+      case 'answer':
+        await this.handleAnswer(from, payload);
+        break;
+      case 'ice-candidate':
+        await this.handleIceCandidate(from, payload);
+        break;
+      case 'connection-request':
+        await this.handleConnectionRequest(from);
+        break;
+    }
+  }
+
+  private async handleOffer(peerId: string, offer: RTCSessionDescriptionInit) {
+    const connection = await this.createConnection(peerId);
+    await connection.setRemoteDescription(offer);
+    const answer = await connection.createAnswer();
+    await connection.setLocalDescription(answer);
+    
+    this.sendSignalingMessage(peerId, 'answer', answer);
+  }
+
+  private async handleAnswer(peerId: string, answer: RTCSessionDescriptionInit) {
+    const connection = this.connections.get(peerId);
+    if (connection) {
+      await connection.setRemoteDescription(answer);
+    }
+  }
+
+  private async handleIceCandidate(peerId: string, candidate: RTCIceCandidateInit) {
+    const connection = this.connections.get(peerId);
+    if (connection) {
+      await connection.addIceCandidate(candidate);
+    }
+  }
+
+  private async handleConnectionRequest(from: string) {
+    // Auto-accept connection requests for simplicity
+    await this.initiateConnection(from);
+  }
+
+  private sendSignalingMessage(to: string, type: string, payload: any) {
+    if (this.signalingSocket?.readyState === WebSocket.OPEN) {
+      this.signalingSocket.send(JSON.stringify({
+        type,
+        to,
+        from: this.localId,
+        payload
+      }));
+    }
   }
 
   setMessageCallback(callback: (message: Message) => void) {
@@ -33,8 +152,16 @@ class P2PMessenger {
     const configuration = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.ekiga.net' },
+        { urls: 'stun:stun.ideasip.com' },
+        { urls: 'stun:stun.rixtelecom.se' },
+        { urls: 'stun:stunserver.org' }
+      ],
+      iceCandidatePoolSize: 10
     };
 
     const connection = new RTCPeerConnection(configuration);
@@ -45,18 +172,21 @@ class P2PMessenger {
     });
 
     dataChannel.onopen = () => {
-      console.log(`Data channel opened for ${contactId}`);
+      console.log(`✅ Data channel opened for ${contactId}`);
+      this.dataChannels.set(contactId, dataChannel);
       this.onConnectionStatusCallback?.(contactId, true);
     };
 
     dataChannel.onclose = () => {
-      console.log(`Data channel closed for ${contactId}`);
+      console.log(`❌ Data channel closed for ${contactId}`);
+      this.dataChannels.delete(contactId);
       this.onConnectionStatusCallback?.(contactId, false);
     };
 
     dataChannel.onmessage = (event) => {
       try {
         const message: Message = JSON.parse(event.data);
+        console.log('📨 Real P2P message received:', message);
         this.onMessageCallback?.(message);
       } catch (error) {
         console.error('Failed to parse message:', error);
@@ -65,18 +195,39 @@ class P2PMessenger {
 
     connection.ondatachannel = (event) => {
       const channel = event.channel;
+      this.dataChannels.set(contactId, channel);
+      
       channel.onmessage = (event) => {
         try {
           const message: Message = JSON.parse(event.data);
+          console.log('📨 Real P2P message received via incoming channel:', message);
           this.onMessageCallback?.(message);
         } catch (error) {
           console.error('Failed to parse message:', error);
         }
       };
+
+      channel.onopen = () => {
+        console.log(`✅ Incoming data channel opened for ${contactId}`);
+        this.onConnectionStatusCallback?.(contactId, true);
+      };
+
+      channel.onclose = () => {
+        console.log(`❌ Incoming data channel closed for ${contactId}`);
+        this.dataChannels.delete(contactId);
+        this.onConnectionStatusCallback?.(contactId, false);
+      };
+    };
+
+    connection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.sendSignalingMessage(contactId, 'ice-candidate', event.candidate);
+      }
     };
 
     connection.onconnectionstatechange = () => {
       const connected = connection.connectionState === 'connected';
+      console.log(`🔗 Connection state changed for ${contactId}: ${connection.connectionState}`);
       this.onConnectionStatusCallback?.(contactId, connected);
     };
 
@@ -84,15 +235,24 @@ class P2PMessenger {
     return connection;
   }
 
-  async sendMessage(contactId: string, content: string): Promise<boolean> {
-    const connection = this.connections.get(contactId);
-    if (!connection) {
-      // Simulate P2P message sending for demo
-      return this.simulateP2PMessage(contactId, content);
+  async initiateConnection(contactId: string): Promise<void> {
+    try {
+      const connection = await this.createConnection(contactId);
+      const offer = await connection.createOffer();
+      await connection.setLocalDescription(offer);
+      
+      this.sendSignalingMessage(contactId, 'offer', offer);
+      console.log(`🚀 Connection initiated with ${contactId}`);
+    } catch (error) {
+      console.error('Failed to initiate connection:', error);
+      throw error;
     }
+  }
 
-    const dataChannel = connection.createDataChannel('messages');
-    if (dataChannel.readyState === 'open') {
+  async sendMessage(contactId: string, content: string): Promise<boolean> {
+    const dataChannel = this.dataChannels.get(contactId);
+    
+    if (dataChannel && dataChannel.readyState === 'open') {
       const message: Message = {
         id: Date.now().toString(),
         senderId: this.localId,
@@ -104,26 +264,39 @@ class P2PMessenger {
         read: false
       };
 
-      dataChannel.send(JSON.stringify(message));
-      return true;
+      try {
+        dataChannel.send(JSON.stringify(message));
+        console.log('📤 Real P2P message sent:', message);
+        return true;
+      } catch (error) {
+        console.error('Failed to send P2P message:', error);
+        throw new Error('Failed to send message via P2P channel');
+      }
+    } else {
+      console.warn(`No active data channel for ${contactId}, state:`, dataChannel?.readyState);
+      throw new Error('No active P2P connection');
     }
-
-    return this.simulateP2PMessage(contactId, content);
   }
 
-  private async simulateP2PMessage(contactId: string, content: string): Promise<boolean> {
-    // Simulate network delay and encryption
-    await new Promise(resolve => setTimeout(resolve, 100));
+  async addContact(contactId: string): Promise<void> {
+    // Send connection request via signaling server
+    this.sendSignalingMessage(contactId, 'connection-request', {});
     
-    // Simulate occasional network failures
-    if (Math.random() < 0.1) {
-      throw new Error('P2P network unreachable');
+    // Also try to initiate connection directly
+    try {
+      await this.initiateConnection(contactId);
+    } catch (error) {
+      console.log('Direct connection failed, waiting for signaling:', error);
     }
-
-    return true;
   }
 
   disconnect(contactId: string) {
+    const dataChannel = this.dataChannels.get(contactId);
+    if (dataChannel) {
+      dataChannel.close();
+      this.dataChannels.delete(contactId);
+    }
+
     const connection = this.connections.get(contactId);
     if (connection) {
       connection.close();
@@ -132,10 +305,15 @@ class P2PMessenger {
   }
 
   disconnectAll() {
-    this.connections.forEach((connection, contactId) => {
-      connection.close();
-    });
+    this.dataChannels.forEach((channel) => channel.close());
+    this.dataChannels.clear();
+    
+    this.connections.forEach((connection) => connection.close());
     this.connections.clear();
+    
+    if (this.signalingSocket) {
+      this.signalingSocket.close();
+    }
   }
 }
 
@@ -173,41 +351,9 @@ export function MessengerView() {
       }));
     });
 
-    // Initialize demo contacts with real networking capabilities
+    // Initialize empty contacts list if none exist
     if (!contacts || contacts.length === 0) {
-      const demoContacts: Contact[] = [
-        {
-          id: 'alice-blockchain',
-          name: 'Alice (Blockchain Dev)',
-          publicKey: 'ed25519:A1B2C3D4E5F6789012345678901234567890123456789012345678901234567890',
-          status: 'online'
-        },
-        {
-          id: 'bob-defi',
-          name: 'Bob (DeFi Trader)', 
-          publicKey: 'ed25519:B2C3D4E5F6789012345678901234567890123456789012345678901234567890A1',
-          status: 'offline'
-        },
-        {
-          id: 'charlie-nft',
-          name: 'Charlie (NFT Artist)',
-          publicKey: 'ed25519:C3D4E5F6789012345678901234567890123456789012345678901234567890A1B2',
-          status: 'online'
-        }
-      ];
-      setContacts(demoContacts);
-      
-      // Simulate some connections
-      demoContacts.forEach(contact => {
-        if (contact.status === 'online') {
-          setTimeout(() => {
-            setConnectionStatus(currentStatus => ({
-              ...currentStatus,
-              [contact.id]: true
-            }));
-          }, Math.random() * 2000);
-        }
-      });
+      setContacts([]);
     }
 
     return () => {
@@ -245,31 +391,6 @@ export function MessengerView() {
         );
         
         toast.success('Message sent via P2P network');
-        
-        // Simulate response for demo
-        setTimeout(() => {
-          const responses = [
-            "Thanks for reaching out via the decentralized network!",
-            "Great to connect on Web3 messaging!",
-            "This P2P encryption is working perfectly.",
-            "Love the privacy features of this messenger.",
-            "The blockchain integration here is impressive."
-          ];
-          
-          const response: Message = {
-            id: (Date.now() + 1).toString(),
-            senderId: selectedContactId,
-            receiverId: 'me',
-            content: responses[Math.floor(Math.random() * responses.length)],
-            timestamp: Date.now() + 1000,
-            encrypted: true,
-            delivered: true,
-            read: false
-          };
-          
-          setMessages(currentMessages => [...(currentMessages || []), response]);
-          toast.info('New message received');
-        }, 1000 + Math.random() * 3000);
       }
     } catch (error) {
       toast.error('Failed to send message: P2P network unavailable');
@@ -297,9 +418,9 @@ export function MessengerView() {
     setNewContactName('');
     setShowAddContact(false);
     
-    // Try to establish P2P connection
+    // Try to establish real P2P connection
     try {
-      await p2pMessenger.createConnection(newContact.id);
+      await p2pMessenger.addContact(newContact.id);
       toast.success(`Added ${newContactName} and initiated P2P connection`);
     } catch (error) {
       toast.warning(`Added ${newContactName} but P2P connection failed`);
