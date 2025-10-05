@@ -34,8 +34,8 @@ export function WalletConnection({ onConnectionChange }: WalletConnectionProps) 
   const [walletConfig, setWalletConfig] = useKV<WalletConfig>('wallet-config', {
     rpcEndpoint: PRIVACHAIN_CONFIG.rpc,
     restEndpoint: PRIVACHAIN_CONFIG.rest,
-    apiKey: '',
-    autoConnect: false,
+    apiKey: 'df449cf7393c69c5ffc164a3fb4f1095f1b923e61762624aa0351e38de9fb306',
+    autoConnect: true,
   });
 
   const [keplrInstalled, setKeplrInstalled] = useState(false);

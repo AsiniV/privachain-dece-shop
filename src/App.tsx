@@ -3,6 +3,7 @@ import { SearchView } from '@/components/SearchView';
 import { BrowserView } from '@/components/BrowserView';
 import { MessengerView } from '@/components/MessengerView';
 import { PrivacyDashboard } from '@/components/PrivacyDashboard';
+import { TransactionMonitor } from '@/components/TransactionMonitor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Toaster } from '@/components/ui/sonner';
@@ -90,6 +91,7 @@ function App() {
           {currentView === 'privacy' && <PrivacyDashboard />}
         </main>
       </div>
+      <TransactionMonitor />
       <Toaster />
     </>
   );
