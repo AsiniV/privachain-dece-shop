@@ -2,13 +2,13 @@
 
 ## Core Purpose & Success
 
-**Mission Statement**: A privacy-focused, decentralized web browser that seamlessly runs complex modern web applications while providing secure access to decentralized content and encrypted communications.
+**Mission Statement**: A privacy-focused, decentralized web browser with permanently enabled maximum privacy features that seamlessly runs complex modern web applications while providing secure access to decentralized content and encrypted communications.
 
 **Success Indicators**: 
 - Users can access any modern web application (Figma, YouTube, Google, etc.) without functionality limitations
 - Seamless switching between traditional web and decentralized content (IPFS, .prv domains)
 - Secure messaging with end-to-end encryption
-- Comprehensive privacy monitoring and protection
+- All privacy features permanently active with 100% privacy score maintained at all times
 
 **Experience Qualities**: Powerful, Secure, Seamless
 
@@ -48,9 +48,14 @@
 - **Success Criteria**: Tab state survives app restarts, proper back/forward navigation
 
 ### Real-Time Privacy Monitoring
-- **What**: Live privacy analysis including fingerprint resistance testing, WebRTC leak detection, and network anonymity verification
-- **Why**: Users need immediate feedback on their privacy protection status and potential vulnerabilities
-- **Success Criteria**: Comprehensive privacy score with actionable recommendations, real-time threat detection
+- **What**: Always-on privacy protection with live analysis including fingerprint resistance testing, WebRTC leak detection, and network anonymity verification - all features permanently enabled for maximum security
+- **Why**: Users need continuous, uncompromising privacy protection without the risk of accidentally disabling critical security features
+- **Success Criteria**: 100% privacy score maintained, comprehensive threat detection active at all times, no user-toggleable privacy controls
+
+### Permanent Privacy Feature Activation
+- **What**: All privacy features (DPI Bypass, IPFS Encryption, TOR Network, P2P Search, Zero-Knowledge Proofs) are permanently enabled by default with no ability to disable
+- **Why**: Ensures maximum privacy protection without user error or oversight compromising security
+- **Success Criteria**: All privacy systems active from startup, visual indicators showing permanent activation status, locked-on privacy controls
 
 ### WebRTC P2P Messaging System
 - **What**: Direct peer-to-peer messaging using WebRTC data channels with end-to-end encryption

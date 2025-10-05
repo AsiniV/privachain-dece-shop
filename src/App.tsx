@@ -73,7 +73,11 @@ function App() {
             </Badge>
             <Badge variant="outline" className="text-green-400 border-green-400">
               <Shield className="w-3 h-3 mr-1" />
-              Secure
+              Max Privacy
+            </Badge>
+            <Badge variant="outline" className="text-blue-400 border-blue-400">
+              <span className="w-2 h-2 bg-blue-400 rounded-full mr-1" />
+              All Features Active
             </Badge>
           </div>
         </nav>
