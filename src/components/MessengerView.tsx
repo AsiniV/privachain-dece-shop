@@ -1,533 +1,327 @@
 import { useState, useEffect, useRef } from 'react';
-import { Message, Contact } from '@/lib/types';
-import { useKV } from '@github/spark/hooks';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { PaperPlaneRight, Shield, Users, Plus, WifiX, WifiSlash } from '@phosphor-icons/react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { PaperPlaneTilt, Plus, Coins, Clock, CheckCircle, XCircle, Warning, User, CurrencyCircleDollar } from '@phosphor-icons/react';
+import { WalletConnection } from '@/components/WalletConnection';
+import { useKV } from '@github/spark/hooks';
+import { cosmosService, MessengerMessage, PaymentTransaction } from '@/lib/cosmos';
 import { toast } from 'sonner';
 
-// Real WebRTC P2P Messaging Service with Signal Server
-class P2PMessenger {
-  private connections: Map<string, RTCPeerConnection> = new Map();
-  private dataChannels: Map<string, RTCDataChannel> = new Map();
-  private localId: string;
-  private onMessageCallback?: (message: Message) => void;
-  private onConnectionStatusCallback?: (contactId: string, connected: boolean) => void;
-  private signalingSocket?: WebSocket;
-
-  constructor() {
-    this.localId = 'user-' + Math.random().toString(36).substr(2, 9);
-    this.initializeUser();
-    this.initializeSignaling();
-  }
-
-  private async initializeUser() {
-    try {
-      if (typeof window !== 'undefined' && window.spark) {
-        const user = await window.spark.user();
-        if (user && user.id) {
-          this.localId = String(user.id);
-        } else if (user && user.login) {
-          this.localId = `user-${user.login}-${Date.now()}`;
-        }
-      }
-    } catch (error) {
-      console.log('Failed to get user ID from spark, using random:', error);
-    }
-  }
-
-  private async initializeSignaling() {
-    // Use a free WebRTC signaling service
-    const signalingServers = [
-      'wss://ws.postman-echo.com/raw',
-      'wss://echo.websocket.org',
-      'wss://socketsbay.com/wss/v2/1/demo/'
-    ];
-
-    for (const server of signalingServers) {
-      try {
-        this.signalingSocket = new WebSocket(server);
-        
-        this.signalingSocket.onopen = () => {
-          console.log('✅ Signaling server connected:', server);
-          // Register this peer
-          this.signalingSocket?.send(JSON.stringify({
-            type: 'register',
-            id: this.localId
-          }));
-        };
-
-        this.signalingSocket.onmessage = async (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            await this.handleSignalingMessage(data);
-          } catch (error) {
-            console.warn('Signaling message error:', error);
-          }
-        };
-
-        this.signalingSocket.onerror = (error) => {
-          console.warn('Signaling error:', error);
-        };
-
-        break; // Successfully connected
-      } catch (error) {
-        console.warn(`Failed to connect to ${server}:`, error);
-        continue;
-      }
-    }
-  }
-
-  private async handleSignalingMessage(data: any) {
-    const { type, from, payload } = data;
-    
-    switch (type) {
-      case 'offer':
-        await this.handleOffer(from, payload);
-        break;
-      case 'answer':
-        await this.handleAnswer(from, payload);
-        break;
-      case 'ice-candidate':
-        await this.handleIceCandidate(from, payload);
-        break;
-      case 'connection-request':
-        await this.handleConnectionRequest(from);
-        break;
-    }
-  }
-
-  private async handleOffer(peerId: string, offer: RTCSessionDescriptionInit) {
-    const connection = await this.createConnection(peerId);
-    await connection.setRemoteDescription(offer);
-    const answer = await connection.createAnswer();
-    await connection.setLocalDescription(answer);
-    
-    this.sendSignalingMessage(peerId, 'answer', answer);
-  }
-
-  private async handleAnswer(peerId: string, answer: RTCSessionDescriptionInit) {
-    const connection = this.connections.get(peerId);
-    if (connection) {
-      await connection.setRemoteDescription(answer);
-    }
-  }
-
-  private async handleIceCandidate(peerId: string, candidate: RTCIceCandidateInit) {
-    const connection = this.connections.get(peerId);
-    if (connection) {
-      await connection.addIceCandidate(candidate);
-    }
-  }
-
-  private async handleConnectionRequest(from: string) {
-    // Auto-accept connection requests for simplicity
-    await this.initiateConnection(from);
-  }
-
-  private sendSignalingMessage(to: string, type: string, payload: any) {
-    if (this.signalingSocket?.readyState === WebSocket.OPEN) {
-      this.signalingSocket.send(JSON.stringify({
-        type,
-        to,
-        from: this.localId,
-        payload
-      }));
-    }
-  }
-
-  setMessageCallback(callback: (message: Message) => void) {
-    this.onMessageCallback = callback;
-  }
-
-  setConnectionStatusCallback(callback: (contactId: string, connected: boolean) => void) {
-    this.onConnectionStatusCallback = callback;
-  }
-
-  async createConnection(contactId: string): Promise<RTCPeerConnection> {
-    const configuration = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:stun.ekiga.net' },
-        { urls: 'stun:stun.ideasip.com' },
-        { urls: 'stun:stun.rixtelecom.se' },
-        { urls: 'stun:stunserver.org' }
-      ],
-      iceCandidatePoolSize: 10
-    };
-
-    const connection = new RTCPeerConnection(configuration);
-    
-    // Create data channel for messaging
-    const dataChannel = connection.createDataChannel('messages', {
-      ordered: true
-    });
-
-    dataChannel.onopen = () => {
-      console.log(`✅ Data channel opened for ${contactId}`);
-      this.dataChannels.set(contactId, dataChannel);
-      this.onConnectionStatusCallback?.(contactId, true);
-    };
-
-    dataChannel.onclose = () => {
-      console.log(`❌ Data channel closed for ${contactId}`);
-      this.dataChannels.delete(contactId);
-      this.onConnectionStatusCallback?.(contactId, false);
-    };
-
-    dataChannel.onmessage = (event) => {
-      try {
-        const message: Message = JSON.parse(event.data);
-        console.log('📨 Real P2P message received:', message);
-        this.onMessageCallback?.(message);
-      } catch (error) {
-        console.error('Failed to parse message:', error);
-      }
-    };
-
-    connection.ondatachannel = (event) => {
-      const channel = event.channel;
-      this.dataChannels.set(contactId, channel);
-      
-      channel.onmessage = (event) => {
-        try {
-          const message: Message = JSON.parse(event.data);
-          console.log('📨 Real P2P message received via incoming channel:', message);
-          this.onMessageCallback?.(message);
-        } catch (error) {
-          console.error('Failed to parse message:', error);
-        }
-      };
-
-      channel.onopen = () => {
-        console.log(`✅ Incoming data channel opened for ${contactId}`);
-        this.onConnectionStatusCallback?.(contactId, true);
-      };
-
-      channel.onclose = () => {
-        console.log(`❌ Incoming data channel closed for ${contactId}`);
-        this.dataChannels.delete(contactId);
-        this.onConnectionStatusCallback?.(contactId, false);
-      };
-    };
-
-    connection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendSignalingMessage(contactId, 'ice-candidate', event.candidate);
-      }
-    };
-
-    connection.onconnectionstatechange = () => {
-      const connected = connection.connectionState === 'connected';
-      console.log(`🔗 Connection state changed for ${contactId}: ${connection.connectionState}`);
-      this.onConnectionStatusCallback?.(contactId, connected);
-    };
-
-    this.connections.set(contactId, connection);
-    return connection;
-  }
-
-  async initiateConnection(contactId: string): Promise<void> {
-    try {
-      const connection = await this.createConnection(contactId);
-      const offer = await connection.createOffer();
-      await connection.setLocalDescription(offer);
-      
-      this.sendSignalingMessage(contactId, 'offer', offer);
-      console.log(`🚀 Connection initiated with ${contactId}`);
-    } catch (error) {
-      console.error('Failed to initiate connection:', error);
-      throw error;
-    }
-  }
-
-  async sendMessage(contactId: string, content: string): Promise<boolean> {
-    const dataChannel = this.dataChannels.get(contactId);
-    
-    if (dataChannel && dataChannel.readyState === 'open') {
-      const message: Message = {
-        id: Date.now().toString(),
-        senderId: this.localId,
-        receiverId: contactId,
-        content,
-        timestamp: Date.now(),
-        encrypted: true,
-        delivered: true,
-        read: false
-      };
-
-      try {
-        dataChannel.send(JSON.stringify(message));
-        console.log('📤 Real P2P message sent:', message);
-        return true;
-      } catch (error) {
-        console.error('Failed to send P2P message:', error);
-        throw new Error('Failed to send message via P2P channel');
-      }
-    } else {
-      console.warn(`No active data channel for ${contactId}, state:`, dataChannel?.readyState);
-      throw new Error('No active P2P connection');
-    }
-  }
-
-  async addContact(contactId: string): Promise<void> {
-    // Send connection request via signaling server
-    this.sendSignalingMessage(contactId, 'connection-request', {});
-    
-    // Also try to initiate connection directly
-    try {
-      await this.initiateConnection(contactId);
-    } catch (error) {
-      console.log('Direct connection failed, waiting for signaling:', error);
-    }
-  }
-
-  disconnect(contactId: string) {
-    const dataChannel = this.dataChannels.get(contactId);
-    if (dataChannel) {
-      dataChannel.close();
-      this.dataChannels.delete(contactId);
-    }
-
-    const connection = this.connections.get(contactId);
-    if (connection) {
-      connection.close();
-      this.connections.delete(contactId);
-    }
-  }
-
-  disconnectAll() {
-    this.dataChannels.forEach((channel) => channel.close());
-    this.dataChannels.clear();
-    
-    this.connections.forEach((connection) => connection.close());
-    this.connections.clear();
-    
-    if (this.signalingSocket) {
-      this.signalingSocket.close();
-    }
-  }
+interface Contact {
+  id: string;
+  name: string;
+  address: string;
+  lastSeen: number;
 }
 
 export function MessengerView() {
-  const [contacts, setContacts] = useKV<Contact[]>('messenger-contacts', []);
-  const [messages, setMessages] = useKV<Message[]>('messenger-messages', []);
-  const [selectedContactId, setSelectedContactId] = useState<string>('');
-  const [messageInput, setMessageInput] = useState('');
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [userAddress, setUserAddress] = useState<string>('');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  
+  // Persistent data
+  const [contacts, setContacts] = useKV<Contact[]>('blockchain-contacts', []);
+  const [messages, setMessages] = useKV<MessengerMessage[]>('blockchain-messages', []);
+  const [transactions, setTransactions] = useKV<PaymentTransaction[]>('blockchain-transactions', []);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [newContactAddress, setNewContactAddress] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [showAddContact, setShowAddContact] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useKV<Record<string, boolean>>('connection-status', {});
-  const [p2pMessenger] = useState(() => new P2PMessenger());
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const selectedContact = contacts?.find(c => c.id === selectedContactId);
-  const contactMessages = messages?.filter(m => 
-    (m.senderId === selectedContactId || m.receiverId === selectedContactId)
-  ) || [];
-
+  // Scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [contactMessages]);
-
-  useEffect(() => {
-    // Initialize P2P messenger callbacks
-    p2pMessenger.setMessageCallback((message: Message) => {
-      setMessages(currentMessages => [...(currentMessages || []), message]);
-      toast.info('New P2P message received');
-    });
-
-    p2pMessenger.setConnectionStatusCallback((contactId: string, connected: boolean) => {
-      setConnectionStatus(currentStatus => ({
-        ...currentStatus,
-        [contactId]: connected
-      }));
-    });
-
-    // Initialize empty contacts list if none exist
-    if (!contacts || contacts.length === 0) {
-      setContacts([]);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+  }, [messages, selectedContact]);
 
-    return () => {
-      p2pMessenger.disconnectAll();
-    };
-  }, [contacts, setContacts, setMessages, setConnectionStatus, p2pMessenger]);
+  // Load messages when wallet connects or contact changes
+  useEffect(() => {
+    if (isWalletConnected && selectedContact) {
+      loadMessages();
+    }
+  }, [isWalletConnected, selectedContact]);
+
+  const handleWalletConnection = (connected: boolean, address?: string) => {
+    setIsWalletConnected(connected);
+    if (connected && address) {
+      setUserAddress(address);
+      toast.success('Wallet connected - blockchain messaging enabled');
+    } else {
+      setUserAddress('');
+      setSelectedContact(null);
+      toast.info('Wallet disconnected - blockchain features disabled');
+    }
+  };
+
+  const loadMessages = async () => {
+    if (!selectedContact || !isWalletConnected) return;
+    
+    setIsLoadingMessages(true);
+    try {
+      // Query blockchain for messages with this contact
+      const blockchainMessages = await cosmosService.queryMessages(selectedContact.address);
+      
+      // Merge with local messages (for development/testing)
+      const allMessages = [
+        ...(messages || []).filter(m => 
+          (m.sender === userAddress && m.recipient === selectedContact.address) ||
+          (m.sender === selectedContact.address && m.recipient === userAddress)
+        ),
+        ...blockchainMessages
+      ];
+      
+      // Sort by timestamp and remove duplicates
+      const uniqueMessages = allMessages
+        .filter((msg, index, self) => 
+          index === self.findIndex(m => m.id === msg.id)
+        )
+        .sort((a, b) => a.timestamp - b.timestamp);
+      
+      setMessages(prevMessages => {
+        const otherMessages = (prevMessages || []).filter(m => 
+          !((m.sender === userAddress && m.recipient === selectedContact.address) ||
+            (m.sender === selectedContact.address && m.recipient === userAddress))
+        );
+        return [...otherMessages, ...uniqueMessages];
+      });
+      
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      toast.error('Failed to load messages from blockchain');
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
 
   const sendMessage = async () => {
-    if (!messageInput.trim() || !selectedContactId) return;
-
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      senderId: 'me',
-      receiverId: selectedContactId,
-      content: messageInput,
-      timestamp: Date.now(),
-      encrypted: true,
-      delivered: false,
-      read: false
-    };
-
-    setMessages(currentMessages => [...(currentMessages || []), newMessage]);
-    const messageContent = messageInput;
-    setMessageInput('');
-
+    if (!newMessage.trim() || !selectedContact || !isWalletConnected) return;
+    
+    setIsSending(true);
     try {
-      const success = await p2pMessenger.sendMessage(selectedContactId, messageContent);
-      
-      if (success) {
-        // Update message as delivered
-        setMessages(currentMessages => 
-          (currentMessages || []).map(msg => 
-            msg.id === newMessage.id ? { ...msg, delivered: true } : msg
-          )
-        );
-        
-        toast.success('Message sent via P2P network');
-      }
-    } catch (error) {
-      toast.error('Failed to send message: P2P network unavailable');
-      
-      // Mark message as failed
-      setMessages(currentMessages => 
-        (currentMessages || []).map(msg => 
-          msg.id === newMessage.id ? { ...msg, delivered: false } : msg
-        )
+      // Send message via Cosmos blockchain
+      const blockchainMessage = await cosmosService.sendMessage(
+        selectedContact.address,
+        newMessage.trim(),
+        paymentAmount || undefined
       );
+      
+      // Add to local state
+      setMessages(prev => [...(prev || []), blockchainMessage]);
+      
+      // If payment was included, process it
+      if (paymentAmount && parseFloat(paymentAmount) > 0) {
+        try {
+          const payment = await cosmosService.processPayment(
+            selectedContact.address,
+            paymentAmount,
+            blockchainMessage.id
+          );
+          
+          setTransactions(prev => [...(prev || []), payment]);
+          toast.success(`Message sent with ${paymentAmount} PRIV payment`);
+        } catch (paymentError) {
+          console.error('Payment failed:', paymentError);
+          toast.error('Message sent but payment failed');
+        }
+      } else {
+        toast.success('Message sent via blockchain');
+      }
+      
+      setNewMessage('');
+      setPaymentAmount('');
+      setShowPaymentDialog(false);
+      
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      toast.error('Failed to send message: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsSending(false);
     }
   };
 
-  const addContact = async () => {
-    if (!newContactName.trim()) return;
+  const addContact = () => {
+    if (!newContactName.trim() || !newContactAddress.trim()) {
+      toast.error('Please enter both name and address');
+      return;
+    }
+
+    // Validate Cosmos address format
+    if (!newContactAddress.startsWith('privachain') || newContactAddress.length < 20) {
+      toast.error('Invalid Cosmos address format');
+      return;
+    }
 
     const newContact: Contact = {
-      id: `${newContactName.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
-      name: newContactName,
-      publicKey: `ed25519:${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-      status: 'unknown'
+      id: Date.now().toString(),
+      name: newContactName.trim(),
+      address: newContactAddress.trim(),
+      lastSeen: Date.now(),
     };
 
-    setContacts(currentContacts => [...(currentContacts || []), newContact]);
+    setContacts(prev => [...(prev || []), newContact]);
     setNewContactName('');
+    setNewContactAddress('');
     setShowAddContact(false);
+    toast.success('Contact added');
+  };
+
+  const removeContact = (contactId: string) => {
+    setContacts(prev => (prev || []).filter(c => c.id !== contactId));
+    if (selectedContact?.id === contactId) {
+      setSelectedContact(null);
+    }
+    toast.success('Contact removed');
+  };
+
+  const getFilteredMessages = () => {
+    if (!selectedContact) return [];
     
-    // Try to establish real P2P connection
-    try {
-      await p2pMessenger.addContact(newContact.id);
-      toast.success(`Added ${newContactName} and initiated P2P connection`);
-    } catch (error) {
-      toast.warning(`Added ${newContactName} but P2P connection failed`);
-    }
+    return (messages || []).filter(msg => 
+      (msg.sender === userAddress && msg.recipient === selectedContact.address) ||
+      (msg.sender === selectedContact.address && msg.recipient === userAddress)
+    );
   };
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const getTransactionForMessage = (messageId: string) => {
+    return (transactions || []).find(tx => tx.messageId === messageId);
   };
 
-  const getStatusColor = (status: Contact['status']) => {
-    switch (status) {
-      case 'online': return 'bg-green-500';
-      case 'offline': return 'bg-gray-500';
-      default: return 'bg-yellow-500';
-    }
-  };
-
-  const isConnected = (contactId: string) => {
-    return connectionStatus?.[contactId] || false;
-  };
-
-  return (
-    <div className="h-screen flex">
-      {/* Contacts Sidebar */}
-      <div className="w-80 bg-card border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">P2P Messenger</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAddContact(!showAddContact)}
-            >
-              <Plus className="w-4 h-4" />
-            </Button>
+  if (!isWalletConnected) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-6 bg-background">
+        <div className="max-w-md w-full space-y-6">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Warning className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Blockchain Wallet Required</h2>
+            <p className="text-muted-foreground mb-6">
+              Connect your Cosmos wallet to access secure blockchain messaging with smart contract integration.
+            </p>
           </div>
           
-          {showAddContact && (
-            <div className="space-y-2">
-              <Input
-                placeholder="Contact name or public key"
-                value={newContactName}
-                onChange={(e) => setNewContactName(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addContact()}
-              />
-              <div className="flex gap-2">
-                <Button size="sm" onClick={addContact}>Add & Connect</Button>
-                <Button size="sm" variant="outline" onClick={() => setShowAddContact(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {(contacts || []).map((contact) => {
-            const connected = isConnected(contact.id);
-            return (
-              <div
-                key={contact.id}
-                className={`p-4 border-b border-border cursor-pointer transition-colors ${
-                  selectedContactId === contact.id ? 'bg-muted' : 'hover:bg-muted/50'
-                }`}
-                onClick={() => setSelectedContactId(contact.id)}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Avatar>
-                      <AvatarFallback>{contact.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-card ${getStatusColor(contact.status)}`} />
-                    {connected && (
-                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-accent rounded-full flex items-center justify-center">
-                        <WifiX className="w-2 h-2 text-accent-foreground" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium flex items-center gap-2">
-                      {contact.name}
-                      {connected && (
-                        <Badge variant="outline" className="text-xs text-accent border-accent">
-                          P2P
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-sm text-muted-foreground truncate mono">
-                      {contact.publicKey.slice(0, 20)}...
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="p-4 border-t border-border">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Shield className="w-4 h-4 text-accent" />
-            <span>WebRTC P2P + Encryption</span>
+          <WalletConnection onConnectionChange={handleWalletConnection} />
+          
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">
+              Features include:
+            </p>
+            <ul className="text-sm text-muted-foreground mt-2 space-y-1">
+              <li>• On-chain message verification</li>
+              <li>• Integrated micropayments</li>
+              <li>• Smart contract routing</li>
+              <li>• Cryptographic message proofs</li>
+            </ul>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex bg-background">
+      {/* Sidebar */}
+      <div className="w-80 border-r border-border flex flex-col">
+        {/* Wallet Status */}
+        <div className="p-4 border-b border-border">
+          <WalletConnection onConnectionChange={handleWalletConnection} />
+        </div>
+
+        {/* Contacts Header */}
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Blockchain Contacts</h3>
+            <Dialog open={showAddContact} onOpenChange={setShowAddContact}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Contact</DialogTitle>
+                  <DialogDescription>
+                    Add a new contact using their Cosmos wallet address
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Input
+                      placeholder="Contact name"
+                      value={newContactName}
+                      onChange={(e) => setNewContactName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Input
+                      placeholder="privachain1..."
+                      value={newContactAddress}
+                      onChange={(e) => setNewContactAddress(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  <Button onClick={addContact} className="w-full">
+                    Add Contact
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+
+        {/* Contacts List */}
+        <ScrollArea className="flex-1">
+          {(contacts || []).length === 0 ? (
+            <div className="p-4 text-center text-muted-foreground">
+              <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No contacts yet</p>
+            </div>
+          ) : (
+            <div className="p-2">
+              {(contacts || []).map((contact) => (
+                <div
+                  key={contact.id}
+                  className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                    selectedContact?.id === contact.id ? 'bg-primary/10' : 'hover:bg-muted'
+                  }`}
+                  onClick={() => setSelectedContact(contact)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{contact.name}</p>
+                      <p className="text-sm text-muted-foreground mono truncate">
+                        {contact.address.slice(0, 12)}...{contact.address.slice(-8)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeContact(contact.id);
+                      }}
+                      className="opacity-50 hover:opacity-100"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
       </div>
 
       {/* Chat Area */}
@@ -535,28 +329,23 @@ export function MessengerView() {
         {selectedContact ? (
           <>
             {/* Chat Header */}
-            <div className="p-4 border-b border-border bg-card">
+            <div className="p-4 border-b border-border">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Avatar>
-                    <AvatarFallback>{selectedContact.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="font-medium">{selectedContact.name}</div>
-                    <div className="text-sm text-muted-foreground capitalize">
-                      {selectedContact.status}
-                    </div>
-                  </div>
+                <div>
+                  <h3 className="font-semibold">{selectedContact.name}</h3>
+                  <p className="text-sm text-muted-foreground mono">
+                    {selectedContact.address}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge className="bg-accent/20 text-accent border-accent">
-                    <Shield className="w-3 h-3 mr-1" />
-                    WebRTC P2P
+                  <Badge variant="outline" className="text-green-400 border-green-400">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Blockchain Secured
                   </Badge>
-                  {isConnected(selectedContact.id) && (
-                    <Badge variant="outline" className="text-green-400 border-green-400">
-                      <WifiX className="w-3 h-3 mr-1" />
-                      Connected
+                  {isLoadingMessages && (
+                    <Badge variant="outline">
+                      <Clock className="w-3 h-3 mr-1 animate-pulse" />
+                      Loading...
                     </Badge>
                   )}
                 </div>
@@ -564,63 +353,138 @@ export function MessengerView() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {contactMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.senderId === 'me' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      message.senderId === 'me'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
-                    }`}
-                  >
-                    <div>{message.content}</div>
-                    <div className="text-xs opacity-70 mt-1 flex items-center gap-1">
-                      <span>{formatTime(message.timestamp)}</span>
-                      {message.encrypted && <Shield className="w-3 h-3" />}
-                      {message.senderId === 'me' && (
-                        message.delivered ? (
-                          <span className="text-green-400">✓✓</span>
-                        ) : (
-                          <span className="text-yellow-400">⏳</span>
-                        )
-                      )}
+            <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+              <div className="space-y-4">
+                {getFilteredMessages().map((message) => {
+                  const isOwn = message.sender === userAddress;
+                  const transaction = getTransactionForMessage(message.id);
+                  
+                  return (
+                    <div
+                      key={message.id}
+                      className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-xs lg:max-w-md ${isOwn ? 'order-2' : 'order-1'}`}>
+                        <Card className={`p-3 ${
+                          isOwn 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'bg-card'
+                        }`}>
+                          <p className="text-sm">{message.content}</p>
+                          
+                          {transaction && (
+                            <div className={`mt-2 pt-2 border-t ${
+                              isOwn ? 'border-primary-foreground/20' : 'border-border'
+                            }`}>
+                              <div className="flex items-center gap-1 text-xs">
+                                <CurrencyCircleDollar className="w-3 h-3" />
+                                <span>{transaction.amount} PRIV</span>
+                                {transaction.status === 'confirmed' && (
+                                  <CheckCircle className="w-3 h-3 text-green-400" />
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className={`mt-2 flex items-center gap-2 text-xs ${
+                            isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                          }`}>
+                            <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+                            {message.transactionHash && (
+                              <>
+                                <span>•</span>
+                                <span className="mono">
+                                  {message.transactionHash.slice(0, 8)}...
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </Card>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
 
             {/* Message Input */}
-            <div className="p-4 border-t border-border bg-card">
+            <div className="p-4 border-t border-border">
               <div className="flex gap-2">
                 <Input
-                  placeholder="Type your message..."
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                  className="flex-1"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!showPaymentDialog) {
+                        sendMessage();
+                      }
+                    }
+                  }}
+                  disabled={isSending}
                 />
-                <Button onClick={sendMessage} disabled={!messageInput.trim()}>
-                  <PaperPlaneRight className="w-4 h-4" />
+                
+                <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="icon" disabled={!newMessage.trim()}>
+                      <Coins className="w-4 h-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Send with Payment</DialogTitle>
+                      <DialogDescription>
+                        Include a PRIV payment with your message
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Input
+                          type="number"
+                          step="0.000001"
+                          min="0"
+                          placeholder="0.00 PRIV"
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => setShowPaymentDialog(false)}
+                          variant="outline"
+                          className="flex-1"
+                        >
+                          Cancel
+                        </Button>
+                        <Button onClick={sendMessage} disabled={isSending} className="flex-1">
+                          {isSending ? 'Sending...' : 'Send with Payment'}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Button onClick={sendMessage} disabled={isSending || !newMessage.trim()}>
+                  {isSending ? (
+                    <Clock className="w-4 h-4 animate-pulse" />
+                  ) : (
+                    <PaperPlaneTilt className="w-4 h-4" />
+                  )}
                 </Button>
-              </div>
-              <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                <Shield className="w-3 h-3" />
-                End-to-end encrypted via WebRTC P2P connections
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Select a contact to start messaging</p>
-              <p className="text-sm mt-2">All messages are encrypted and decentralized</p>
+          <div className="flex-1 flex items-center justify-center text-center">
+            <div>
+              <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                <User className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <h3 className="font-semibold mb-2">Select a Contact</h3>
+              <p className="text-muted-foreground">
+                Choose a contact to start secure blockchain messaging
+              </p>
             </div>
           </div>
         )}
